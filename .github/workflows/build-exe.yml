@@ -19,10 +19,10 @@ jobs:
         java-version: '17'
 
     - name: Download and Extract Launch4j
-      shell: powershell
+      shell: cmd
       run: |
-        Invoke-WebRequest -Uri "https://downloads.sourceforge.net/project/launch4j/launch4j-3/3.50/launch4j-3.50-win32.zip" -OutFile "launch4j.zip"
-        Expand-Archive -Path "launch4j.zip" -DestinationPath "l4j_tool"
+        curl -L -o launch4j.zip "https://downloads.sourceforge.net/project/launch4j/launch4j-3/3.50/launch4j-3.50-win32.zip?use_mirror=autoselect"
+        powershell Expand-Archive -Path "launch4j.zip" -DestinationPath "l4j_tool"
 
     - name: Compile JAR to EXE using Launch4j
       shell: powershell
