@@ -1,0 +1,36 @@
+name: Build Supersonic Client EXE
+
+on:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build-exe:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Download and Extract Launch4j
+      shell: powershell
+      run: |
+        Invoke-WebRequest -Uri "https://downloads.sourceforge.net/project/launch4j/launch4j-3/3.50/launch4j-3.50-win32.zip" -OutFile "launch4j.zip"
+        Expand-Archive -Path "launch4j.zip" -DestinationPath "l4j_tool"
+
+    - name: Compile JAR to EXE using Launch4j
+      shell: powershell
+      run: |
+        ./l4j_tool/launch4j/launch4jc.exe launch4j.xml
+
+    - name: Upload Supersonic EXE Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Supersonic-Launcher
+        path: minecraft/Supersonic.exe
