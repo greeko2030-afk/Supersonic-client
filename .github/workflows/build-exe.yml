@@ -1,104 +1,36 @@
-name: Build Supersonic Launcher (Windows EXE)
+name: Build Supersonic Client EXE
 
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
 
 jobs:
-  build-windows-exe:
-    name: Build & Package Windows EXE
-    runs-on: ubuntu-latest
+  build-exe:
+    runs-on: windows-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout Repository
+      uses: actions/checkout@v4
 
-      - name: Set up Java 17 (Temurin)
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: maven
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
 
-      - name: Build fat JAR with Maven
-        working-directory: minecraft-launcher
-        run: mvn clean package --no-transfer-progress -DskipTests
+    - name: Download and Extract Launch4j
+      shell: cmd
+      run: |
+        curl -L -o launch4j.zip "https://downloads.sourceforge.net/project/launch4j/launch4j-3/3.50/launch4j-3.50-win32.zip?use_mirror=autoselect"
+        powershell Expand-Archive -Path "launch4j.zip" -DestinationPath "l4j_tool"
 
-      - name: Verify JAR was produced
-        run: ls -lh minecraft-launcher/target/supersonic-launcher-1.0.0.jar
+    - name: Compile JAR to EXE using Launch4j
+      shell: powershell
+      run: |
+        ./l4j_tool/launch4j/launch4jc.exe launch4j.xml
 
-      - name: Install Launch4j
-        run: |
-          wget -q https://sourceforge.net/projects/launch4j/files/launch4j-3/3.50/launch4j-3.50-linux-x64.tgz/download \
-               -O launch4j.tgz
-          tar -xzf launch4j.tgz
-
-      - name: Wrap JAR into standalone Windows EXE
-        run: |
-          ABS_ROOT="$(pwd)/minecraft-launcher"
-          sed \
-            -e "s|target/supersonic-launcher-1.0.0.jar|${ABS_ROOT}/target/supersonic-launcher-1.0.0.jar|g" \
-            -e "s|target/Supersonic-Launcher.exe|${ABS_ROOT}/target/Supersonic-Launcher.exe|g" \
-            minecraft-launcher/launch4j.xml > /tmp/launch4j-abs.xml
-          ./launch4j/launch4j /tmp/launch4j-abs.xml
-
-      - name: Verify EXE was produced
-        run: ls -lh minecraft-launcher/target/Supersonic-Launcher.exe
-
-      - name: Upload Windows EXE artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Supersonic-Launcher-Windows-EXE
-          path: minecraft-launcher/target/Supersonic-Launcher.exe
-          retention-days: 30
-
-      - name: Upload fat JAR artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Supersonic-Launcher-JAR-CrossPlatform
-          path: minecraft-launcher/target/supersonic-launcher-1.0.0.jar
-          retention-days: 30
-
-  release:
-    name: Create GitHub Release
-    needs: build-windows-exe
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    permissions:
-      contents: write
-
-    steps:
-      - name: Download EXE artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: Supersonic-Launcher-Windows-EXE
-          path: dist/
-
-      - name: Download JAR artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: Supersonic-Launcher-JAR-CrossPlatform
-          path: dist/
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: "Supersonic Launcher ${{ github.ref_name }}"
-          draft: false
-          prerelease: false
-          body: |
-            ## Supersonic Launcher ${{ github.ref_name }}
-
-            | File | Platform |
-            |------|----------|
-            | `Supersonic-Launcher.exe` | Windows (Java 17+ required) |
-            | `supersonic-launcher-1.0.0.jar` | Linux / macOS |
-
-            Download Java 17: https://adoptium.net
-          files: |
-            dist/Supersonic-Launcher.exe
-            dist/supersonic-launcher-1.0.0.jar
+    - name: Upload Supersonic EXE Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Supersonic-Launcher
+        path: minecraft/Supersonic.exe
