@@ -14,13 +14,19 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Set up Java (Required for Launch4j)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
       - name: Download and Extract Launch4j
         run: |
           wget -q https://sourceforge.net/projects/launch4j/files/launch4j-3/3.50/launch4j-3.50-linux-x64.tgz/download -O launch4j.tgz
           tar -xzf launch4j.tgz
 
-      - name: Compile JAR to EXE using Launch4j
-        run: ./launch4j/launch4j launch4j.xml
+      - name: Compile JAR to EXE using Launch4j (Java Mode)
+        run: java -jar launch4j/launch4j.jar launch4j.xml
 
       - name: Upload Supersonic EXE Artifact
         uses: actions/upload-artifact@v4
