@@ -1,23 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <launch4jConfig>
   <dontWrapJar>false</dontWrapJar>
   <headerType>gui</headerType>
-  <jar>minecraft/launcher.jar</jar>
-  <outfile>minecraft/Supersonic.exe</outfile>
-  <errTitle>Supersonic Client Error</errTitle>
+  <jar>target/supersonic-launcher-1.0.0.jar</jar>
+  <outfile>target/Supersonic-Launcher.exe</outfile>
+  <errTitle>Java Required - Supersonic Launcher</errTitle>
   <cmdLine></cmdLine>
   <chdir>.</chdir>
   <priority>normal</priority>
-  <downloadUrl>http://java.com/download</downloadUrl>
-  <supportUrl></supportUrl>
+  <downloadUrl>https://adoptium.net/temurin/releases/</downloadUrl>
+  <supportUrl>https://www.narratormc.net</supportUrl>
   <stayAlive>false</stayAlive>
   <restartOnCrash>false</restartOnCrash>
-  <manifest></manifest>
+  
+  <singleInstance>
+    <mutexName>SupersonicLauncher_Mutex</mutexName>
+    <windowTitle></windowTitle>
+  </singleInstance>
+
   <jre>
-    <path>minecraft/graalvm</path>
-    <bundledJre64Bit>true</bundledJre64Bit>
+    <path></path>
+    <bundledJre64Bit>false</bundledJre64Bit>
     <bundledJreAsFallback>false</bundledJreAsFallback>
     <minVersion>17.0.0</minVersion>
     <maxVersion></maxVersion>
-    <runtimeBits>64</runtimeBits>
+    <jdkPreference>preferJre</jdkPreference>
+    <runtimeBits>64/32</runtimeBits>
+    <initialHeapSize>512</initialHeapSize>
+    <maxHeapSize>4096</maxHeapSize>
   </jre>
+
+  <versionInfo>
+    <fileVersion>1.0.0.0</fileVersion>
+    <txtFileVersion>1.0.0</txtFileVersion>
+    <fileDescription>Supersonic Launcher - Official Client</fileDescription>
+    <copyright>NarratorMC</copyright>
+    <productVersion>1.0.0.0</productVersion>
+    <txtProductVersion>1.0.0</txtProductVersion>
+    <productName>Supersonic Launcher</productName>
+    <internalName>SupersonicLauncher</internalName>
+    <originalFilename>Supersonic-Launcher.exe</originalFilename>
+  </versionInfo>
 </launch4jConfig>
