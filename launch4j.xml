@@ -2,8 +2,8 @@
 <launch4jConfig>
   <dontWrapJar>false</dontWrapJar>
   <headerType>gui</headerType>
-  <jar>target/supersonic-launcher-1.0.0.jar</jar>
-  <outfile>target/Supersonic-Launcher.exe</outfile>
+  <jar>minecraft/launcher.jar</jar>
+  <outfile>Supersonic-Launcher.exe</outfile>
   <errTitle>Java Required - Supersonic Launcher</errTitle>
   <cmdLine></cmdLine>
   <chdir>.</chdir>
