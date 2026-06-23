@@ -25,12 +25,19 @@ jobs:
           curl.exe -sL -o launch4j.zip "https://sourceforge.net/projects/launch4j/files/launch4j-3/3.50/launch4j-3.50-win32.zip/download"
           Expand-Archive -Path "launch4j.zip" -DestinationPath "."
 
+      - name: Download D3D12 Translator (Mesa3D opengl32.dll)
+        run: |
+          curl.exe -sL -o mesa3d.7z "https://github.com/pal1000/mesa-dist-win/releases/download/24.0.3/mesa3d-24.0.3-release-msvc.7z"
+          7z e mesa3d.7z x64/opengl32.dll -r
+
       - name: Compile JAR to EXE using Launch4j (Windows CLI)
         run: launch4j\launch4jc.exe launch4j.xml
 
       - name: Upload Supersonic EXE Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Supersonic-Launcher-Windows-EXE
-          path: Supersonic-Launcher.exe
+          name: Supersonic-Launcher-Windows
+          path: |
+            Supersonic-Launcher.exe
+            opengl32.dll
           retention-days: 30
