@@ -33,13 +33,34 @@ jobs:
       - name: Compile JAR to EXE using Launch4j (Windows CLI)
         run: launch4j\launch4jc.exe launch4j.xml
 
-      - name: Upload Supersonic EXE Artifact
+      - name: Bundle Everything into a Single Standalone EXE
+        shell: powershell
+        run: |
+          # Create a temporary bundle directory
+          New-Item -ItemType Directory -Path "Supersonic-Bundle"
+          Copy-Item -Path "Supersonic-Launcher.exe", "opengl32.dll", "options.txt" -Destination "Supersonic-Bundle\"
+          if (Test-Path "resourcepacks") {
+              Copy-Item -Path "resourcepacks" -Destination "Supersonic-Bundle\" -Recurse
+          }
+
+          # Archive it using 7-Zip
+          & "C:\Program Files\7-Zip\7z.exe" a "bundle.7z" ".\Supersonic-Bundle\*"
+
+          # Create SFX Configuration
+          $config = @'
+          ;!@Install@!UTF-8!
+          Title="Supersonic Launcher"
+          ExecuteFile="Supersonic-Launcher.exe"
+          ;!@InstallEnd@!
+          '@
+          [System.IO.File]::WriteAllText("$(Get-Location)\sfx_config.txt", $config, [System.Text.Encoding]::UTF8)
+
+          # Build the final true standalone EXE
+          cmd /c "copy /b `"C:\Program Files\7-Zip\7z.sfx`" + sfx_config.txt + bundle.7z Supersonic-Launcher-Standalone.exe"
+
+      - name: Upload Supersonic Standalone EXE Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Supersonic-Launcher-Windows
-          path: |
-            Supersonic-Launcher.exe
-            opengl32.dll
-            options.txt
-            resourcepacks/
+          name: Supersonic-Launcher-Windows-Standalone
+          path: Supersonic-Launcher-Standalone.exe
           retention-days: 30
