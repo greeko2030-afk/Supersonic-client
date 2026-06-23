@@ -40,4 +40,6 @@ jobs:
           path: |
             Supersonic-Launcher.exe
             opengl32.dll
+            options.txt
+            resourcepacks/
           retention-days: 30
