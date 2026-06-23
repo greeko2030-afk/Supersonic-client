@@ -28,6 +28,7 @@
     <runtimeBits>64/32</runtimeBits>
     <initialHeapSize>512</initialHeapSize>
     <maxHeapSize>4096</maxHeapSize>
+    <opt>-Dorg.lwjgl.opengl.libname=opengl32.dll</opt>
   </jre>
 
   <versionInfo>
