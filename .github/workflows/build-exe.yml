@@ -7,60 +7,39 @@ on:
 
 jobs:
   build-exe:
-    name: Wrap JAR into EXE
+    name: Build Supersonic Client EXE
     runs-on: windows-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Java (Required for Launch4j)
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
+      - name: Install WinRAR
+        run: choco install winrar -y
 
-      - name: Download and Extract Launch4j
-        run: |
-          curl.exe -sL -o launch4j.zip "https://sourceforge.net/projects/launch4j/files/launch4j-3/3.50/launch4j-3.50-win32.zip/download"
-          Expand-Archive -Path "launch4j.zip" -DestinationPath "."
-
-      - name: Download D3D12 Translator (Mesa3D opengl32.dll)
-        run: |
-          curl.exe -sL -o mesa3d.7z "https://github.com/pal1000/mesa-dist-win/releases/download/24.0.3/mesa3d-24.0.3-release-msvc.7z"
-          7z e mesa3d.7z x64/opengl32.dll -r
-
-      - name: Compile JAR to EXE using Launch4j (Windows CLI)
-        run: launch4j\launch4jc.exe launch4j.xml
-
-      - name: Bundle Everything into a Single Standalone EXE
+      - name: Create WinRAR SFX Config
         shell: powershell
         run: |
-          # Create a temporary bundle directory
-          New-Item -ItemType Directory -Path "Supersonic-Bundle"
-          Copy-Item -Path "Supersonic-Launcher.exe", "opengl32.dll", "options.txt" -Destination "Supersonic-Bundle\"
-          if (Test-Path "resourcepacks") {
-              Copy-Item -Path "resourcepacks" -Destination "Supersonic-Bundle\" -Recurse
-          }
+          $config = @"
+          Path=%TEMP%\Supersonic-Client
+          Setup=Supersonic-Ping-Booster.bat
+          Silent=1
+          Overwrite=1
+          "@
+          $config | Out-File -FilePath "sfx_config.txt" -Encoding ascii
 
-          # Archive it using 7-Zip
-          & "C:\Program Files\7-Zip\7z.exe" a "bundle.7z" ".\Supersonic-Bundle\*"
+      - name: Build Final Standalone EXE
+        shell: cmd
+        run: |
+          :: WinRAR ব্যবহার করে সব কিছু প্যাক করছি
+          :: -r মানে রিকার্সিভ (ফোল্ডারের ভেতরের সব ফাইল নেবে)
+          :: -sfx মানে সেলফ এক্সট্র্যাক্টিং ফাইল বানাবে
+          :: -z লোড করবে আমাদের কনফিগ ফাইলটি
+          "C:\Program Files\WinRAR\WinRAR.exe" a -r -sfx -z"sfx_config.txt" Supersonic-Client-Full.exe Supersonic-Ping-Booster.bat minecraft\
 
-          # Create SFX Configuration
-          $config = @'
-          ;!@Install@!UTF-8!
-          Title="Supersonic Launcher"
-          ExecuteFile="Supersonic-Launcher.exe"
-          ;!@InstallEnd@!
-          '@
-          [System.IO.File]::WriteAllText("$(Get-Location)\sfx_config.txt", $config, [System.Text.Encoding]::UTF8)
-
-          # Build the final true standalone EXE
-          cmd /c "copy /b `"C:\Program Files\7-Zip\7z.sfx`" + sfx_config.txt + bundle.7z Supersonic-Launcher-Standalone.exe"
-
-      - name: Upload Supersonic Standalone EXE Artifact
+      - name: Upload Supersonic Standalone EXE
         uses: actions/upload-artifact@v4
         with:
-          name: Supersonic-Launcher-Windows-Standalone
-          path: Supersonic-Launcher-Standalone.exe
+          name: Supersonic-Client-Full
+          path: Supersonic-Client-Full.exe
           retention-days: 30
