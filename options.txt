@@ -1,7 +1,0 @@
-version:3953
-resourcePacks:["vanilla","file/Default-HD-512x-Demo-1.5.2.5.zip"]
-incompatibleResourcePacks:[]
-rawMouseInput:true
-mouseSensitivity:0.45
-touchscreen:false
-discreteMouseScroll:true
