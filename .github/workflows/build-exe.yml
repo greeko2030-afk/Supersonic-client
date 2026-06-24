@@ -11,15 +11,17 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      # Step 1: Check out the code from the repository
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Step 2: Install WinRAR using Chocolatey
       - name: Install WinRAR
         run: choco install winrar -y
 
-      # Step 3: Create the WinRAR SFX configuration file
+      - name: Download D3D12 Translator (Mesa3D opengl32.dll)
+        run: |
+          curl.exe -sL -o mesa3d.7z "https://github.com/pal1000/mesa-dist-win/releases/download/24.0.3/mesa3d-24.0.3-release-msvc.7z"
+          7z e mesa3d.7z x64/opengl32.dll -r
+
       - name: Create WinRAR SFX Config
         shell: powershell
         run: |
@@ -31,11 +33,10 @@ jobs:
           "@
           $config | Out-File -FilePath "sfx_config.txt" -Encoding ascii
 
-      # Step 4: Build the final standalone EXE with dynamic path detection
       - name: Build Final Standalone EXE
         shell: powershell
         run: |
-          # Dynamically locate WinRAR installation path to prevent "path not found" errors
+          # Dynamically locate WinRAR installation path
           $winrar = "C:\Program Files\WinRAR\WinRAR.exe"
           if (-not (Test-Path $winrar)) {
               $winrar = "C:\Program Files (x86)\WinRAR\WinRAR.exe"
@@ -44,10 +45,9 @@ jobs:
               $winrar = "winrar"
           }
           
-          # Execute WinRAR safely without trailing slash issues on 'minecraft' folder
-          & $winrar a -r -sfx -z"sfx_config.txt" Supersonic-Client-Full.exe Supersonic-Ping-Booster.bat minecraft
+          # Pack everything including opengl32.dll for Direct3D12 support
+          & $winrar a -r -sfx -z"sfx_config.txt" Supersonic-Client-Full.exe Supersonic-Ping-Booster.bat opengl32.dll minecraft
 
-      # Step 5: Upload the final compiled EXE as an artifact
       - name: Upload Supersonic Standalone EXE
         uses: actions/upload-artifact@v4
         with:
