@@ -11,12 +11,16 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      # Step 1: Check out the code from the repository
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # Step 2: Install WinRAR to handle the SFX archive creation
       - name: Install WinRAR
         run: choco install winrar -y
 
+      # Step 3: Create the WinRAR SFX configuration file
+      # This tells WinRAR what to run automatically after extraction
       - name: Create WinRAR SFX Config
         shell: powershell
         run: |
@@ -28,15 +32,16 @@ jobs:
           "@
           $config | Out-File -FilePath "sfx_config.txt" -Encoding ascii
 
+      # Step 4: Build the final standalone EXE
+      # -r: Recursive (includes subdirectories like /mods and /config)
+      # -sfx: Creates a Self-Extracting executable
+      # -z: Uses our configuration file
       - name: Build Final Standalone EXE
         shell: cmd
         run: |
-          :: WinRAR ব্যবহার করে সব কিছু প্যাক করছি
-          :: -r মানে রিকার্সিভ (ফোল্ডারের ভেতরের সব ফাইল নেবে)
-          :: -sfx মানে সেলফ এক্সট্র্যাক্টিং ফাইল বানাবে
-          :: -z লোড করবে আমাদের কনফিগ ফাইলটি
           "C:\Program Files\WinRAR\WinRAR.exe" a -r -sfx -z"sfx_config.txt" Supersonic-Client-Full.exe Supersonic-Ping-Booster.bat minecraft\
 
+      # Step 5: Upload the result as an Artifact so you can download it
       - name: Upload Supersonic Standalone EXE
         uses: actions/upload-artifact@v4
         with:
