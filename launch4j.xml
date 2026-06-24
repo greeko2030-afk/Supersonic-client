@@ -7,7 +7,7 @@
   <errTitle>Java Required - Supersonic Launcher</errTitle>
   <cmdLine></cmdLine>
   <chdir>.</chdir>
-  <priority>normal</priority>
+  <priority>high</priority>
   <downloadUrl>https://adoptium.net/temurin/releases/</downloadUrl>
   <supportUrl>https://www.narratormc.net</supportUrl>
   <stayAlive>false</stayAlive>
@@ -22,13 +22,29 @@
     <path></path>
     <bundledJre64Bit>false</bundledJre64Bit>
     <bundledJreAsFallback>false</bundledJreAsFallback>
-    <minVersion>17.0.0</minVersion>
+    <minVersion>21.0.0</minVersion>
     <maxVersion></maxVersion>
     <jdkPreference>preferJre</jdkPreference>
-    <runtimeBits>64/32</runtimeBits>
-    <initialHeapSize>512</initialHeapSize>
-    <maxHeapSize>4096</maxHeapSize>
+    <runtimeBits>64</runtimeBits>
+    <initialHeapSize>8192</initialHeapSize>
+    <maxHeapSize>8192</maxHeapSize>
+    
+    <!-- Mesa3D DirectX 12 Optimization -->
     <opt>-Dorg.lwjgl.opengl.libname=opengl32.dll</opt>
+    
+    <!-- Max Optimized Java Arguments (ZGC) -->
+    <opt>-XX:+UseZGC</opt>
+    <opt>-XX:+ZGenerational</opt>
+    <opt>-XX:+AlwaysPreTouch</opt>
+    <opt>-XX:+DisableExplicitGC</opt>
+    <opt>-XX:+PerfDisableSharedMem</opt>
+    <opt>-XX:+UnlockExperimentalVMOptions</opt>
+    <opt>-XX:MaxGCPauseMillis=10</opt>
+    <opt>-XX:+UseStringDeduplication</opt>
+    
+    <!-- Ping & Network Optimization -->
+    <opt>-Djava.net.preferIPv4Stack=true</opt>
+    <opt>-DtcpNoDelay=true</opt>
   </jre>
 
   <versionInfo>
