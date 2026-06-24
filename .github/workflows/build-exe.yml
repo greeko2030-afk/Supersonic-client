@@ -15,12 +15,11 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Step 2: Install WinRAR to handle the SFX archive creation
+      # Step 2: Install WinRAR using Chocolatey
       - name: Install WinRAR
         run: choco install winrar -y
 
       # Step 3: Create the WinRAR SFX configuration file
-      # This tells WinRAR what to run automatically after extraction
       - name: Create WinRAR SFX Config
         shell: powershell
         run: |
@@ -32,16 +31,23 @@ jobs:
           "@
           $config | Out-File -FilePath "sfx_config.txt" -Encoding ascii
 
-      # Step 4: Build the final standalone EXE
-      # -r: Recursive (includes subdirectories like /mods and /config)
-      # -sfx: Creates a Self-Extracting executable
-      # -z: Uses our configuration file
+      # Step 4: Build the final standalone EXE with dynamic path detection
       - name: Build Final Standalone EXE
-        shell: cmd
+        shell: powershell
         run: |
-          "C:\Program Files\WinRAR\WinRAR.exe" a -r -sfx -z"sfx_config.txt" Supersonic-Client-Full.exe Supersonic-Ping-Booster.bat minecraft\
+          # Dynamically locate WinRAR installation path to prevent "path not found" errors
+          $winrar = "C:\Program Files\WinRAR\WinRAR.exe"
+          if (-not (Test-Path $winrar)) {
+              $winrar = "C:\Program Files (x86)\WinRAR\WinRAR.exe"
+          }
+          if (-not (Test-Path $winrar)) {
+              $winrar = "winrar"
+          }
+          
+          # Execute WinRAR safely without trailing slash issues on 'minecraft' folder
+          & $winrar a -r -sfx -z"sfx_config.txt" Supersonic-Client-Full.exe Supersonic-Ping-Booster.bat minecraft
 
-      # Step 5: Upload the result as an Artifact so you can download it
+      # Step 5: Upload the final compiled EXE as an artifact
       - name: Upload Supersonic Standalone EXE
         uses: actions/upload-artifact@v4
         with:
