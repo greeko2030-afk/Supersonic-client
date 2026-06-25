@@ -1,8 +1,10 @@
-main.pyname: Build and Release Supersonic Client
+name: Build Supersonic Client
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 permissions:
@@ -11,34 +13,33 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-
+    
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - name: Install PyInstaller
-      run: pip install pyinstaller
+      - name: Install PyInstaller
+        run: pip install pyinstaller
 
-    - name: Download and Extract Portable Java 21
-      run: |
-        Invoke-WebRequest -Uri "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.3%2B9/OpenJDK21U-jre_x64_windows_hotspot_21.0.3_9.zip" -OutFile "jre.zip"
-        Expand-Archive -Path "jre.zip" -DestinationPath "jre_extracted"
-        Move-Item -Path "jre_extracted\jdk*" -Destination ".\jre21"
+      - name: Download and Extract Portable Java 21
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.3%2B9/OpenJDK21U-jre_x64_windows_hotspot_21.0.3_9.zip" -OutFile "jre.zip"
+          Expand-Archive -Path "jre.zip" -DestinationPath "jre_extracted"
+          Move-Item -Path "jre_extracted\jdk*" -Destination ".\jre21"
 
-    - name: Build EXE with Bundled Java
-      run: |
-        pyinstaller --noconfirm --onefile --uac-admin --add-data "jre21;jre21" --name "Supersonic-Client-Full" main.py
+      - name: Build EXE with Bundled Java
+        run: pyinstaller --noconfirm --onefile --uac-admin --add-data "jre21;jre21" --name "Supersonic-Client-Full" main.py
 
-    - name: Automatically Upload to GitHub Releases
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: latest
-        name: Supersonic Client Release
-        files: dist/Supersonic-Client-Full.exe
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Automatically Upload to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Supersonic Client Release
+          files: dist/Supersonic-Client-Full.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
