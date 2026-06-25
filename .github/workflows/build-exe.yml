@@ -30,10 +30,10 @@ jobs:
         Expand-Archive -Path "jre.zip" -DestinationPath "jre_extracted"
         Move-Item -Path "jre_extracted\jdk*" -Destination ".\jre21"
 
-    # NOTE: If Supersonic-Launcher.exe is NOT in your GitHub repository, 
-    # remove the '#' from the two lines below and replace the URL with your actual launcher download link.
-    # - name: Download Supersonic Launcher File
-    #   run: Invoke-WebRequest -Uri "https://your-website-or-link.com/Supersonic-Launcher.exe" -OutFile "Supersonic-Launcher.exe"
+    - name: Download Supersonic Launcher File Automatically
+      run: |
+        # REPLACE THE URL BELOW WITH YOUR ACTUAL LAUNCHER DOWNLOAD LINK
+        Invoke-WebRequest -Uri "https://your-website-or-link.com/Supersonic-Launcher.exe" -OutFile "Supersonic-Launcher.exe"
 
     - name: Build Single EXE with PyInstaller
       run: |
