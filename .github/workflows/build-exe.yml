@@ -1,56 +1,49 @@
-name: Build Supersonic Client EXE
+name: Build and Release Supersonic Client
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  build-exe:
-    name: Build Supersonic Client EXE
+  build:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+    - name: Checkout Repository
+      uses: actions/checkout@v4
 
-      - name: Install WinRAR
-        run: choco install winrar -y
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
 
-      - name: Download D3D12 Translator (Mesa3D opengl32.dll)
-        run: |
-          curl.exe -sL -o mesa3d.7z "https://github.com/pal1000/mesa-dist-win/releases/download/24.0.3/mesa3d-24.0.3-release-msvc.7z"
-          7z e mesa3d.7z x64/opengl32.dll -r
+    - name: Install PyInstaller
+      run: pip install pyinstaller
 
-      - name: Create WinRAR SFX Config
-        shell: powershell
-        run: |
-          $config = @"
-          Path=%TEMP%\Supersonic-Client
-          Setup=Supersonic-Ping-Booster.bat
-          Silent=1
-          Overwrite=1
-          "@
-          $config | Out-File -FilePath "sfx_config.txt" -Encoding ascii
+    - name: Download and Extract Portable Java 21
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.3%2B9/OpenJDK21U-jre_x64_windows_hotspot_21.0.3_9.zip" -OutFile "jre.zip"
+        Expand-Archive -Path "jre.zip" -DestinationPath "jre_extracted"
+        Move-Item -Path "jre_extracted\jdk*" -Destination ".\jre21"
 
-      - name: Build Final Standalone EXE
-        shell: powershell
-        run: |
-          # Dynamically locate WinRAR installation path
-          $winrar = "C:\Program Files\WinRAR\WinRAR.exe"
-          if (-not (Test-Path $winrar)) {
-              $winrar = "C:\Program Files (x86)\WinRAR\WinRAR.exe"
-          }
-          if (-not (Test-Path $winrar)) {
-              $winrar = "winrar"
-          }
-          
-          # Pack everything including opengl32.dll for Direct3D12 support
-          & $winrar a -r -sfx -z"sfx_config.txt" Supersonic-Client-Full.exe Supersonic-Ping-Booster.bat opengl32.dll minecraft
+    # NOTE: If Supersonic-Launcher.exe is NOT in your GitHub repository, 
+    # remove the '#' from the two lines below and replace the URL with your actual launcher download link.
+    # - name: Download Supersonic Launcher File
+    #   run: Invoke-WebRequest -Uri "https://your-website-or-link.com/Supersonic-Launcher.exe" -OutFile "Supersonic-Launcher.exe"
 
-      - name: Upload Supersonic Standalone EXE
-        uses: actions/upload-artifact@v4
-        with:
-          name: Supersonic-Client-Full
-          path: Supersonic-Client-Full.exe
-          retention-days: 30
+    - name: Build Single EXE with PyInstaller
+      run: |
+        pyinstaller --noconfirm --onefile --uac-admin --add-data "Supersonic-Launcher.exe;." --add-data "jre21;jre21" --name "Supersonic-Client-Full" main.py
+
+    - name: Automatically Upload to GitHub Releases
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: latest
+        name: Supersonic Client Live Build
+        files: dist/Supersonic-Client-Full.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
