@@ -1,4 +1,4 @@
-name: Build and Release Supersonic Client
+main.pyname: Build and Release Supersonic Client
 
 on:
   push:
@@ -30,20 +30,15 @@ jobs:
         Expand-Archive -Path "jre.zip" -DestinationPath "jre_extracted"
         Move-Item -Path "jre_extracted\jdk*" -Destination ".\jre21"
 
-    - name: Download Supersonic Launcher File Automatically
+    - name: Build EXE with Bundled Java
       run: |
-        # REPLACE THE URL BELOW WITH YOUR ACTUAL LAUNCHER DOWNLOAD LINK
-        Invoke-WebRequest -Uri "https://your-website-or-link.com/Supersonic-Launcher.exe" -OutFile "Supersonic-Launcher.exe"
-
-    - name: Build Single EXE with PyInstaller
-      run: |
-        pyinstaller --noconfirm --onefile --uac-admin --add-data "Supersonic-Launcher.exe;." --add-data "jre21;jre21" --name "Supersonic-Client-Full" main.py
+        pyinstaller --noconfirm --onefile --uac-admin --add-data "jre21;jre21" --name "Supersonic-Client-Full" main.py
 
     - name: Automatically Upload to GitHub Releases
       uses: softprops/action-gh-release@v2
       with:
         tag_name: latest
-        name: Supersonic Client Live Build
+        name: Supersonic Client Release
         files: dist/Supersonic-Client-Full.exe
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
