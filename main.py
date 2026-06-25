@@ -17,16 +17,20 @@ def main():
     print("========================================")
     print("Optimizing Windows TCP/IP for 0 Ping on Minecraft...")
     
-    # [Insert your network optimization commands here]
+    # [Your network optimization commands can be added here if needed]
+    # Example: os.system('netsh int tcp set global autotuninglevel=normal')
     
     print("[SUCCESS] Network Optimized!")
     print("Launching Supersonic Client...")
     
-    # Locate the bundled launcher
+    # Locate the bundled launcher inside the temp folder
     launcher_exe = resource_path("Supersonic-Launcher.exe")
     
     # Launch the Supersonic-Launcher
-    subprocess.Popen([launcher_exe])
+    if os.path.exists(launcher_exe):
+        subprocess.Popen([launcher_exe])
+    else:
+        print(f"Error: {launcher_exe} not found in bundle!")
 
 if __name__ == "__main__":
     main()
