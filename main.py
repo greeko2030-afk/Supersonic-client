@@ -75,8 +75,14 @@ class SupersonicLauncher(ctk.CTk):
 
     def launch_game(self, username):
         try:
-            # Graphics Environment Variables
+            # ========================================================
+            # FORCING DIRECT3D 12 (D3D12) VIA MESA BINDINGS
+            # ========================================================
+            os.environ["MESA_LOADER_DRIVER_OVERRIDE"] = "zink"
+            os.environ["GALLIUM_DRIVER"] = "zink"
+            os.environ["ZINK_USE_DXIL"] = "1"              # Force Zink to compile into DXIL for D3D12
             os.environ["__GL_THREADED_OPTIMIZATIONS"] = "1"
+            # ========================================================
             
             java_exe = resource_path(os.path.join("jre21", "bin", "java.exe"))
             if not os.path.exists(java_exe):
@@ -127,7 +133,7 @@ class SupersonicLauncher(ctk.CTk):
             self.update_status("Files ready! Generating offline ID...")
             offline_uuid = str(uuid.uuid3(uuid.NAMESPACE_DNS, username))
 
-            # Upgraded Optimization Flags for Max FPS
+            # Advanced JVM Arguments for G1GC + D3D12 Pipelines
             options = {
                 "username": username,
                 "uuid": offline_uuid,
@@ -141,12 +147,10 @@ class SupersonicLauncher(ctk.CTk):
                     "-XX:G1ReservePercent=20",
                     "-XX:MaxGCPauseMillis=50",
                     "-XX:G1HeapRegionSize=32M",
-                    "-Dsun.java2d.d3d=true",
-                    "-Dsun.java2d.opengl=false",
                 ]
             }
 
-            self.update_status("Launching Modded Game... You can close this window.")
+            self.update_status("Launching D3D12 Powered Game... Closing window.")
             command = minecraft_launcher_lib.command.get_minecraft_command(launch_version, minecraft_directory, options)
             
             # Start game and close launcher
