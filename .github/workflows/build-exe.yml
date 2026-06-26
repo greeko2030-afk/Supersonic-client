@@ -23,9 +23,9 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Install required Python libraries including minecraft-launcher-lib
+      # Added customtkinter for the UI
       - name: Install Dependencies
-        run: pip install pyinstaller minecraft-launcher-lib requests
+        run: pip install pyinstaller minecraft-launcher-lib requests customtkinter
 
       - name: Download and Extract Portable Java 21
         run: |
@@ -33,8 +33,9 @@ jobs:
           Expand-Archive -Path "jre.zip" -DestinationPath "jre_extracted"
           Move-Item -Path "jre_extracted\jdk*" -Destination ".\jre21"
 
+      # Added --windowed flag to hide the CMD console
       - name: Build EXE with Bundled Java
-        run: pyinstaller --noconfirm --onefile --uac-admin --add-data "jre21;jre21" --name "Supersonic-Client-Full" main.py
+        run: pyinstaller --noconfirm --onefile --windowed --uac-admin --add-data "jre21;jre21" --name "Supersonic-Client-Full" main.py
 
       - name: Automatically Upload to GitHub Releases
         uses: softprops/action-gh-release@v2
