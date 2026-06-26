@@ -23,8 +23,9 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install PyInstaller
-        run: pip install pyinstaller
+      # Install required Python libraries including minecraft-launcher-lib
+      - name: Install Dependencies
+        run: pip install pyinstaller minecraft-launcher-lib requests
 
       - name: Download and Extract Portable Java 21
         run: |
