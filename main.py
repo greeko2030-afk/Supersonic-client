@@ -1,6 +1,7 @@
 import sys
 import os
 import subprocess
+import uuid
 import minecraft_launcher_lib
 
 def resource_path(relative_path):
@@ -67,10 +68,13 @@ def main():
         input("Press Enter to exit...")
         return
 
+    # Generate an offline UUID based on the username
+    offline_uuid = str(uuid.uuid3(uuid.NAMESPACE_DNS, username))
+
     # JVM Arguments for Direct3D and performance boost
     options = {
         "username": username,
-        "uuid": "",
+        "uuid": offline_uuid,         # Fixed the UUID error here
         "token": "",
         "executablePath": java_exe,
         "jvmArguments": [
