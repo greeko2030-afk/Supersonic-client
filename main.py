@@ -43,7 +43,7 @@ class SupersonicLauncher(ctk.CTk):
 
         # Status Label (Shows download progress)
         self.status_label = ctk.CTkLabel(self, text="Ready to launch.", font=ctk.CTkFont(size=12), text_color="gray")
-        self.status_label.pack(side="bottom",搬pady=20)
+        self.status_label.pack(side="bottom", pady=20)
 
     def update_status(self, text):
         """Updates the status label from the background thread"""
@@ -78,7 +78,6 @@ class SupersonicLauncher(ctk.CTk):
         """Checks if shaders or custom resource packs are actively enabled in options.txt"""
         options_txt = os.path.join(minecraft_directory, "options.txt")
         
-        # If options file doesn't exist yet, default to False (Vanilla OpenGL)
         if not os.path.exists(options_txt):
             return False
             
@@ -86,7 +85,6 @@ class SupersonicLauncher(ctk.CTk):
             with open(options_txt, "r", encoding="utf-8") as f:
                 content = f.read()
                 
-            # Checking if Iris/Oculus shaders are enabled or a non-vanilla resourcepack is active
             has_shader = "shaderPack=" in content and "shaderPack=off" not in content and "shaderPack=\n" not in content
             has_resourcepack = "resourcePacks:[" in content and "resourcePacks:[\"vanilla\"" not in content and "resourcePacks:[]" not in content
             
@@ -110,7 +108,6 @@ class SupersonicLauncher(ctk.CTk):
                 os.environ["ZINK_USE_DXIL"] = "1"
             else:
                 self.update_status("Vanilla Mode! Running on Native OpenGL Engine...")
-                # Clearing environment to fallback to native high FPS driver
                 os.environ.pop("MESA_LOADER_DRIVER_OVERRIDE", None)
                 os.environ.pop("GALLIUM_DRIVER", None)
                 os.environ.pop("ZINK_USE_DXIL", None)
@@ -148,10 +145,14 @@ class SupersonicLauncher(ctk.CTk):
             if not os.path.exists(mods_dir):
                 os.makedirs(mods_dir)
 
+            # ========================================================
+            # UPDATED MODPACK DICTIONARY
+            # ========================================================
             modpack = {
                 "Sodium.jar": "https://cdn.modrinth.com/data/AANobbMI/versions/99f1I8Lw/sodium-fabric-0.5.8%2Bmc1.20.4.jar",
                 "Lithium.jar": "https://cdn.modrinth.com/data/gv9STw84/versions/dtgXv9C6/lithium-fabric-mc1.20.4-0.12.1.jar",
-                "Indium.jar": "https://cdn.modrinth.com/data/g96Y6Ofx/versions/L3R6eKIs/indium-1.0.30%2Bmc1.20.4.jar",
+                "Iris.jar": "https://cdn.modrinth.com/data/YL57xq9U/versions/1uQ0mR2k/iris-1.7.0%2Bmc1.20.4.jar",
+                "Sodium-Extra.jar": "https://cdn.modrinth.com/data/PtjYWJkn/versions/0.5.4%2Bmc1.20.4/sodium-extra-0.5.4%2Bmc1.20.4.jar",
                 "CustomSkinLoader.jar": "https://github.com/xland44/CustomSkinLoader/releases/download/14.20/CustomSkinLoader_Fabric-14.20-1.20.4.jar"
             }
 
