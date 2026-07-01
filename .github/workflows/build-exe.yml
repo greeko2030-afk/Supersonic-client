@@ -42,6 +42,6 @@ jobs:
         with:
           tag_name: latest
           name: Supersonic Client Release
-          files: dist/Supersonic-Client.exe
+          files: dist/Supersonic-Client-Full.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
