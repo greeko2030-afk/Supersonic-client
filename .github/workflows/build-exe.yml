@@ -1,4 +1,4 @@
-Name: Build Supersonic Client
+name: Build Supersonic Client
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Pillow has been added to handle the logo
+      # Pillow is added here to handle the client's logo image rendering
       - name: Install Dependencies
         run: pip install pyinstaller minecraft-launcher-lib requests customtkinter pillow
 
@@ -33,7 +33,7 @@ jobs:
           Expand-Archive -Path "jre.zip" -DestinationPath "jre_extracted"
           Move-Item -Path "jre_extracted\jdk*" -Destination ".\jre21"
 
-      # The logo file is added inside via (--add-data "1000084689.png;.")
+      # The logo file 1000084689.png is bundled inside the executable using the --add-data flag
       - name: Build EXE with Bundled Java and Logo
         run: pyinstaller --noconfirm --onefile --windowed --uac-admin --add-data "jre21;jre21" --add-data "1000084689.png;." --name "Supersonic-Client-Full" main.py
 
@@ -42,6 +42,6 @@ jobs:
         with:
           tag_name: latest
           name: Supersonic Client Release
-          files: dist/Supersonic-Client-Full.exe
+          files: dist/Supersonic-Client.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
