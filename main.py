@@ -8,16 +8,17 @@ import requests
 import subprocess
 import customtkinter as ctk
 from tkinter import filedialog
+from PIL import Image
 import minecraft_launcher_lib
 
-# --- THEME SETTINGS (Matching NarratorMC Web UI) ---
+# --- THEME SETTINGS ---
 ctk.set_appearance_mode("dark")
-BG_COLOR = "#07090E"        # Deep Dark Blue/Black
-SIDEBAR_COLOR = "#0B0E14"   # Slightly lighter for sidebar
-CARD_COLOR = "#121722"      # Card background
-ACCENT_CYAN = "#00E5FF"     # Neon Cyan
-ACCENT_PURPLE = "#8B5CF6"   # Vibrant Purple for Launch Button
-TEXT_MUTED = "#8A93A6"      # Gray text
+BG_COLOR = "#07090E"        
+SIDEBAR_COLOR = "#0B0E14"   
+CARD_COLOR = "#121722"      
+ACCENT_CYAN = "#00E5FF"     
+ACCENT_PURPLE = "#8B5CF6"   
+TEXT_MUTED = "#8A93A6"      
 
 def resource_path(relative_path):
     try:
@@ -26,17 +27,17 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
-class NarratorMCLauncher(ctk.CTk):
+class SuperSonicClient(ctk.CTk):
     def __init__(self):
         super().__init__()
 
         # UI Window Setup
-        self.title("NarratorMC Launcher")
+        self.title("SuperSonic Client")
         self.geometry("1000x650")
         self.resizable(False, False)
         self.configure(fg_color=BG_COLOR)
 
-        self.config_file = "narratormc_config.json"
+        self.config_file = "supersonic_config.json"
         self.user_config = self.load_config()
 
         self.grid_rowconfigure(0, weight=1)
@@ -47,10 +48,23 @@ class NarratorMCLauncher(ctk.CTk):
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
         self.sidebar_frame.grid_rowconfigure(6, weight=1)
 
-        self.logo_label = ctk.CTkLabel(self.sidebar_frame, text="❖ NarratorMC\nL A U N C H E R", 
-                                       font=ctk.CTkFont(size=18, weight="bold"), text_color=ACCENT_CYAN)
-        self.logo_label.grid(row=0, column=0, padx=20, pady=(30, 40))
+        # --- LOGO SETUP ---
+        logo_path = resource_path("1000084689.png")
+        if os.path.exists(logo_path):
+            # Load and resize the logo
+            self.logo_image = ctk.CTkImage(light_image=Image.open(logo_path), 
+                                           dark_image=Image.open(logo_path), 
+                                           size=(110, 110))
+            self.logo_label = ctk.CTkLabel(self.sidebar_frame, image=self.logo_image, text="SuperSonic\nCLIENT", 
+                                           compound="top", font=ctk.CTkFont(size=16, weight="bold"), text_color=ACCENT_CYAN)
+        else:
+            # Fallback text if image is missing
+            self.logo_label = ctk.CTkLabel(self.sidebar_frame, text="❖ SuperSonic\nC L I E N T", 
+                                           font=ctk.CTkFont(size=18, weight="bold"), text_color=ACCENT_CYAN)
+            
+        self.logo_label.grid(row=0, column=0, padx=20, pady=(30, 30))
 
+        # Navigation Buttons
         self.btn_home = self.create_nav_button("⌂  Home", 1, self.show_home)
         self.btn_versions = self.create_nav_button("⚡ Versions", 2, self.show_versions)
         self.btn_accounts = self.create_nav_button("👤  Accounts", 3, self.show_accounts)
@@ -64,13 +78,13 @@ class NarratorMCLauncher(ctk.CTk):
         self.home_frame.grid_columnconfigure(0, weight=1)
         
         self.ready_label = ctk.CTkLabel(self.home_frame, text="READY TO PLAY", font=ctk.CTkFont(size=12, weight="bold"), text_color=ACCENT_CYAN)
-        self.ready_label.pack(pady=(60, 0))
+        self.ready_label.pack(pady=(50, 0))
 
         current_ver = self.user_config.get("version", "1.21.1")
-        self.banner_label = ctk.CTkLabel(self.home_frame, text=f"NarratorMC {current_ver}", font=ctk.CTkFont(size=28, weight="bold"), text_color="white")
+        self.banner_label = ctk.CTkLabel(self.home_frame, text=f"SuperSonic {current_ver}", font=ctk.CTkFont(size=28, weight="bold"), text_color="white")
         self.banner_label.pack(pady=(5, 20))
 
-        self.play_button = ctk.CTkButton(self.home_frame, text="▶ LAUNCH GAME", width=250, height=50, 
+        self.play_button = ctk.CTkButton(self.home_frame, text="▶ PLAY", width=250, height=50, 
                                          corner_radius=8, font=ctk.CTkFont(size=16, weight="bold"), 
                                          fg_color=ACCENT_PURPLE, hover_color="#7C3AED", command=self.start_game_thread)
         self.play_button.pack(pady=10)
@@ -132,7 +146,6 @@ class NarratorMCLauncher(ctk.CTk):
 
         ctk.CTkLabel(self.ver_card, text="Select Game Version (1.20.x / 1.21.x):", font=ctk.CTkFont(size=14)).pack(anchor="w", padx=20, pady=(20, 5))
         
-        # Added latest minor versions for 1.21 and 1.20
         self.version_options = ["1.21.4", "1.21.1", "1.21", "1.20.6", "1.20.4"]
         
         self.version_dropdown = ctk.CTkOptionMenu(
@@ -167,7 +180,7 @@ class NarratorMCLauncher(ctk.CTk):
         self.show_home()
 
     def change_version(self, choice):
-        self.banner_label.configure(text=f"NarratorMC {choice}")
+        self.banner_label.configure(text=f"SuperSonic {choice}")
         self.save_config()
         self.update_status(f"Version switched to {choice}")
 
@@ -265,7 +278,7 @@ class NarratorMCLauncher(ctk.CTk):
             return
 
         self.save_config()
-        self.play_button.configure(state="disabled", text="LAUNCHING...")
+        self.play_button.configure(state="disabled", text="LOADING...")
         threading.Thread(target=self.launch_game, args=(username,), daemon=True).start()
 
     def launch_game(self, username):
@@ -293,7 +306,6 @@ class NarratorMCLauncher(ctk.CTk):
             mods_dir = os.path.join(minecraft_directory, "mods")
             os.makedirs(mods_dir, exist_ok=True)
             
-            # Safe logic for CustomSkinLoader version compatibility
             if base_version == "1.20.4":
                 csl_url = "https://github.com/xland44/CustomSkinLoader/releases/download/14.20/CustomSkinLoader_Fabric-14.20-1.20.4.jar"
                 csl_file = os.path.join(mods_dir, "CustomSkinLoader.jar")
@@ -320,16 +332,16 @@ class NarratorMCLauncher(ctk.CTk):
                 "jvmArguments": [f"-Xmx{allocated_ram}G"]
             }
 
-            self.update_status(f"Launching Client {base_version}...")
+            self.update_status(f"Launching SuperSonic {base_version}...")
             command = minecraft_launcher_lib.command.get_minecraft_command(launch_version, minecraft_directory, options)
             subprocess.Popen(command)
             
             self.update_status("✅ Game Running!")
-            self.play_button.configure(state="normal", text="▶ LAUNCH GAME")
+            self.play_button.configure(state="normal", text="▶ PLAY")
             
         except Exception as e:
             self.update_status(f"⚠️ Error: {e}")
-            self.play_button.configure(state="normal", text="▶ LAUNCH GAME")
+            self.play_button.configure(state="normal", text="▶ PLAY")
 
 if __name__ == "__main__":
     app = SuperSonicClient()
