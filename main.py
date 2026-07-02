@@ -6,6 +6,7 @@ import json
 import shutil
 import requests
 import subprocess
+import ctypes
 import customtkinter as ctk
 from tkinter import filedialog
 from PIL import Image
@@ -31,7 +32,6 @@ class SuperSonicClient(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        # UI Window Setup
         self.title("SuperSonic Client")
         self.geometry("1000x650")
         self.resizable(False, False)
@@ -48,23 +48,19 @@ class SuperSonicClient(ctk.CTk):
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
         self.sidebar_frame.grid_rowconfigure(6, weight=1)
 
-        # --- LOGO SETUP ---
         logo_path = resource_path("1000084689.png")
         if os.path.exists(logo_path):
-            # Load and resize the logo
             self.logo_image = ctk.CTkImage(light_image=Image.open(logo_path), 
                                            dark_image=Image.open(logo_path), 
                                            size=(110, 110))
             self.logo_label = ctk.CTkLabel(self.sidebar_frame, image=self.logo_image, text="SuperSonic\nCLIENT", 
                                            compound="top", font=ctk.CTkFont(size=16, weight="bold"), text_color=ACCENT_CYAN)
         else:
-            # Fallback text if image is missing
             self.logo_label = ctk.CTkLabel(self.sidebar_frame, text="❖ SuperSonic\nC L I E N T", 
                                            font=ctk.CTkFont(size=18, weight="bold"), text_color=ACCENT_CYAN)
             
         self.logo_label.grid(row=0, column=0, padx=20, pady=(30, 30))
 
-        # Navigation Buttons
         self.btn_home = self.create_nav_button("⌂  Home", 1, self.show_home)
         self.btn_versions = self.create_nav_button("⚡ Versions", 2, self.show_versions)
         self.btn_accounts = self.create_nav_button("👤  Accounts", 3, self.show_accounts)
@@ -144,7 +140,7 @@ class SuperSonicClient(ctk.CTk):
         self.ver_card = ctk.CTkFrame(self.versions_frame, fg_color=CARD_COLOR, corner_radius=10)
         self.ver_card.pack(fill="x", padx=40, pady=10)
 
-        ctk.CTkLabel(self.ver_card, text="Select Game Version (1.20.x / 1.21.x):", font=ctk.CTkFont(size=14)).pack(anchor="w", padx=20, pady=(20, 5))
+        ctk.CTkLabel(self.ver_card, text="Select Game Version:", font=ctk.CTkFont(size=14)).pack(anchor="w", padx=20, pady=(20, 5))
         
         self.version_options = ["1.21.4", "1.21.1", "1.21", "1.20.6", "1.20.4"]
         
@@ -174,10 +170,41 @@ class SuperSonicClient(ctk.CTk):
         self.ram_slider.pack(anchor="w", padx=20, pady=(0, 20))
 
         self.shader_switch_var = ctk.IntVar(value=self.user_config.get("enable_shaders", 0))
-        self.shader_switch = ctk.CTkSwitch(self.set_card, text="Enable Shaders Engine (D3D12/Zink)", variable=self.shader_switch_var, progress_color=ACCENT_CYAN)
+        self.shader_switch = ctk.CTkSwitch(self.set_card, text="Enable Shaders (Auto-detects D3D12/OpenGL)", variable=self.shader_switch_var, progress_color=ACCENT_CYAN)
         self.shader_switch.pack(anchor="w", padx=20, pady=(0, 20))
 
         self.show_home()
+
+    # --- LOGIC METHODS ---
+    def check_low_end_pc(self):
+        """ Returns True if the PC has < 8GB RAM or <= 4 CPU Cores """
+        try:
+            # Check RAM using Windows API
+            class MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+            stat = MEMORYSTATUSEX()
+            stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat))
+            
+            total_ram_gb = stat.ullTotalPhys / (1024**3)
+            cpu_cores = os.cpu_count() or 4
+            
+            # Condition for low-end PC: Under 7.5GB RAM or 4 cores or less
+            if total_ram_gb < 7.5 or cpu_cores <= 4:
+                return True
+            return False
+        except Exception:
+            return False # Default fallback
 
     def change_version(self, choice):
         self.banner_label.configure(text=f"SuperSonic {choice}")
@@ -191,7 +218,6 @@ class SuperSonicClient(ctk.CTk):
             self.save_config()
             self.skin_status_label.configure(text=f"Selected: {os.path.basename(filepath)}", text_color="#10B981")
 
-    # --- OTHER UI & LOGIC ---
     def create_nav_button(self, text, row, command):
         btn = ctk.CTkButton(self.sidebar_frame, text=text, fg_color="transparent", text_color=TEXT_MUTED, 
                             font=ctk.CTkFont(size=14, weight="bold"), anchor="w", command=command)
@@ -285,11 +311,34 @@ class SuperSonicClient(ctk.CTk):
         try:
             minecraft_directory = minecraft_launcher_lib.utils.get_minecraft_directory()
             
-            use_shaders = self.shader_switch_var.get() == 1
-            if use_shaders:
+            # --- PC SPEC DETECTION LOGIC ---
+            is_low_end = self.check_low_end_pc()
+            wants_shaders = self.shader_switch_var.get() == 1
+            
+            use_d3d12 = False
+            if is_low_end:
+                # Low-end PC: Always Direct3D12 for Max FPS
+                use_d3d12 = True
+                self.update_status("Detected Low-End PC. Forcing D3D12 for Max FPS...")
+            else:
+                # High-end PC: Based on Shaders switch
+                if wants_shaders:
+                    use_d3d12 = True
+                    self.update_status("High-End PC (Shaders): Using D3D12 Engine...")
+                else:
+                    use_d3d12 = False
+                    self.update_status("High-End PC (Vanilla): Using Default OpenGL...")
+            
+            # Apply Environment Variables for Zink (Direct3D12/Vulkan)
+            if use_d3d12:
                 os.environ["MESA_LOADER_DRIVER_OVERRIDE"] = "zink"
                 os.environ["GALLIUM_DRIVER"] = "zink"
                 os.environ["ZINK_USE_DXIL"] = "1"
+            else:
+                # Clear them just in case they were set previously in the same session
+                os.environ.pop("MESA_LOADER_DRIVER_OVERRIDE", None)
+                os.environ.pop("GALLIUM_DRIVER", None)
+                os.environ.pop("ZINK_USE_DXIL", None)
             
             java_exe = shutil.which("java")
             if not java_exe:
@@ -319,7 +368,6 @@ class SuperSonicClient(ctk.CTk):
                 os.makedirs(local_skin_dir, exist_ok=True)
                 dest_skin = os.path.join(local_skin_dir, f"{username}.png")
                 shutil.copyfile(skin_path, dest_skin)
-                self.update_status("Skin applied successfully!")
 
             offline_uuid = str(uuid.uuid3(uuid.NAMESPACE_DNS, username))
             allocated_ram = int(self.ram_slider.get())
