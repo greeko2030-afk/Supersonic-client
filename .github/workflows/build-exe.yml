@@ -37,11 +37,20 @@ jobs:
       - name: Build EXE with Bundled Java and Logo
         run: pyinstaller --noconfirm --onefile --windowed --uac-admin --add-data "jre21;jre21" --add-data "1000084689.png;." --name "Supersonic-Client-Full" main.py
 
+      # Compile the proper Windows Installer (.exe Setup) from the portable file
+      - name: Compile Inno Setup Installer
+        uses: AmmarAskar/inno-setup-action@v1.2
+        with:
+          filepath: setup.iss
+
+      # Upload both the portable client and the installer to GitHub Releases
       - name: Automatically Upload to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Supersonic Client Release
-          files: dist/Supersonic-Client-Full.exe
+          files: |
+            dist/Supersonic-Client-Full.exe
+            installer_output/Supersonic-Client-Installer.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
