@@ -149,15 +149,15 @@ class SuperSonicClient(ctk.CTk):
 
         self.chat_history = ctk.CTkTextbox(self.agent_frame, fg_color=CARD_COLOR, text_color="white", wrap="word")
         self.chat_history.pack(fill="both", expand=True, padx=40, pady=10)
-        self.chat_history.insert("end", "SupersonicAI: Background monitor is active. If your game crashes, I will automatically analyze logs, install missing mods, or remove faulty ones!\n\n")
+        self.chat_history.insert("end", "SupersonicAI: Background monitor is active. Ready to fix errors dynamically.\n\n")
         self.chat_history.configure(state="disabled")
 
         input_frame = ctk.CTkFrame(self.agent_frame, fg_color="transparent")
         input_frame.pack(fill="x", padx=40, pady=(0, 40))
         self.chat_input = ctk.CTkEntry(input_frame, placeholder_text="Chat with AI manually...", height=40)
         self.chat_input.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        self.chat_input.bind("<Return>", lambda event: self.send_ai_message())
-        ctk.CTkButton(input_frame, text="Send", width=80, height=40, fg_color=ACCENT_PURPLE, command=self.send_ai_message).pack(side="left")
+        self.chat_input.bind("<Return>", lambda event: self.send_ai_message(is_crash=False))
+        ctk.CTkButton(input_frame, text="Send", width=80, height=40, fg_color=ACCENT_PURPLE, command=lambda: self.send_ai_message(is_crash=False)).pack(side="left")
 
     # ==================== SUPERSONIC AI AUTO-FIX LOGIC ====================
     def append_chat(self, sender, text):
@@ -166,7 +166,7 @@ class SuperSonicClient(ctk.CTk):
         self.chat_history.see("end")
         self.chat_history.configure(state="disabled")
 
-    def send_ai_message(self, custom_prompt=None):
+    def send_ai_message(self, custom_prompt=None, is_crash=False):
         api_key = self.api_key_entry.get().strip()
         if not api_key:
             self.append_chat("System", "Error: Please enter Gemini API Key.")
@@ -180,18 +180,29 @@ class SuperSonicClient(ctk.CTk):
             self.append_chat("You", user_text)
 
         self.save_config()
-        threading.Thread(target=self.process_ai_request, args=(api_key, user_text), daemon=True).start()
+        threading.Thread(target=self.process_ai_request, args=(api_key, user_text, is_crash), daemon=True).start()
 
-    def process_ai_request(self, api_key, prompt):
+    def process_ai_request(self, api_key, prompt, is_crash=False):
         try:
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-pro')
             
-            sys_prompt = """
+            # Auto-Switch Logic
+            if is_crash:
+                model_name = 'gemini-1.5-pro'
+                thinking_instruction = "THINKING LEVEL: EXTENDED. You must deeply analyze the crash log step-by-step before concluding."
+                self.append_chat("System", f"Switched to {model_name} for deep log analysis...")
+            else:
+                model_name = 'gemini-1.5-flash'
+                thinking_instruction = "Provide a fast, concise, and helpful response."
+
+            model = genai.GenerativeModel(model_name)
+            
+            sys_prompt = f"""
             You are SupersonicAI, an automated background error fixer for Minecraft.
-            If the user provides a crash log, analyze it. 
-            - If a mod is missing (like fabric-api), reply ONLY with: ACTION: INSTALL_MOD | <modrinth_slug>
-            - If a mod is crashing the game, reply ONLY with: ACTION: REMOVE_MOD | <filename.jar>
+            {thinking_instruction}
+            If the user provides a crash log, analyze it:
+            - If a mod is missing, reply ONLY with: ACTION: INSTALL_MOD | <modrinth_slug>
+            - If a mod is crashing, reply ONLY with: ACTION: REMOVE_MOD | <filename.jar>
             - Otherwise, briefly explain the fix.
             """
             
@@ -223,8 +234,8 @@ class SuperSonicClient(ctk.CTk):
                 logs = f.readlines()[-50:]
             
             log_text = "".join(logs)
-            self.append_chat("System", "⚙️ Game crash detected! Analyzing logs in background...")
-            self.send_ai_message(custom_prompt=f"Analyze this crash log and execute fix action:\n{log_text}")
+            self.append_chat("System", "⚙️ Game crash detected! Handing over to AI...")
+            self.send_ai_message(custom_prompt=f"Analyze this crash log and execute fix action:\n{log_text}", is_crash=True)
         except Exception as e:
             pass
 
@@ -276,7 +287,11 @@ class SuperSonicClient(ctk.CTk):
             return (stat.ullTotalPhys / (1024**3) < 7.5) or (os.cpu_count() or 4 <= 4)
         except: return False
 
-    def change_version(self, choice): self.banner_label.configure(text=f"SuperSonic {choice}"); self.save_config()
+    def change_version(self, choice): 
+        self.banner_label.configure(text=f"SuperSonic {choice}")
+        self.user_config["version"] = choice # FIXED: Version now updates in memory properly
+        self.save_config()
+
     def select_skin(self):
         filepath = filedialog.askopenfilename(title="Select Minecraft Skin", filetypes=[("PNG Files", "*.png")])
         if filepath:
@@ -317,13 +332,16 @@ class SuperSonicClient(ctk.CTk):
         return {"ram": 4, "username": "", "skin_path": "", "enable_shaders": 0, "version": "1.21.1", "ai_api_key": ""}
 
     def save_config(self):
-        config = {
-            "ram": int(self.ram_slider.get()), "username": getattr(self, 'username_entry', ctk.CTkEntry(self)).get().strip(),
-            "skin_path": getattr(self, 'skin_path_var', ctk.StringVar()).get(), "enable_shaders": getattr(self, 'shader_switch_var', ctk.IntVar()).get(),
-            "version": getattr(self, 'version_dropdown', ctk.CTkOptionMenu(self)).get(), "ai_api_key": getattr(self, 'api_key_entry', ctk.CTkEntry(self)).get().strip()
-        }
+        # FIXED: Ensure all UI components sync properly with the config dictionary
+        self.user_config["ram"] = int(self.ram_slider.get()) if hasattr(self, 'ram_slider') else 4
+        self.user_config["username"] = self.username_entry.get().strip() if hasattr(self, 'username_entry') else ""
+        self.user_config["skin_path"] = self.skin_path_var.get() if hasattr(self, 'skin_path_var') else ""
+        self.user_config["enable_shaders"] = self.shader_switch_var.get() if hasattr(self, 'shader_switch_var') else 0
+        self.user_config["version"] = self.version_dropdown.get() if hasattr(self, 'version_dropdown') else "1.21.1"
+        self.user_config["ai_api_key"] = self.api_key_entry.get().strip() if hasattr(self, 'api_key_entry') else ""
+
         try:
-            with open(self.config_file, "w") as f: json.dump(config, f, indent=4)
+            with open(self.config_file, "w") as f: json.dump(self.user_config, f, indent=4)
         except: pass
 
     def start_game_thread(self):
@@ -345,7 +363,7 @@ class SuperSonicClient(ctk.CTk):
                 os.environ["GALLIUM_DRIVER"] = "zink"
             
             java_exe = shutil.which("java") or resource_path(os.path.join("jre21", "bin", "java.exe"))
-            base_version = self.user_config.get("version", "1.21.1")
+            base_version = self.user_config.get("version", "1.21.1") # NOW IT WILL FETCH THE CORRECT DROPDOWN VERSION
             
             minecraft_launcher_lib.install.install_minecraft_version(base_version, minecraft_directory, callback={"setStatus": lambda s: self.update_status(f"Loading: {s}")})
             fabric_ver = minecraft_launcher_lib.fabric.get_latest_loader_version()
@@ -356,7 +374,7 @@ class SuperSonicClient(ctk.CTk):
                 "uuid": str(uuid.uuid3(uuid.NAMESPACE_DNS, username)),
                 "token": "",
                 "executablePath": java_exe,
-                "jvmArguments": [f"-Xmx{int(self.ram_slider.get())}G"]
+                "jvmArguments": [f"-Xmx{int(self.user_config.get('ram', 4))}G"]
             }
 
             self.update_status("Launching Engine...")
