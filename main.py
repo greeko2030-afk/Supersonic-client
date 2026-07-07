@@ -90,6 +90,7 @@ class SuperSonicClient(ctk.CTk):
         self.info_label = ctk.CTkLabel(self.home_frame, text=f"Fabric Loader • {self.user_config.get('ram', 4)*1024} MB RAM", font=ctk.CTkFont(size=11), text_color=TEXT_MUTED)
         self.info_label.pack(pady=(0, 40))
 
+        # Server Integration Card (NarratorMC)
         self.server_card = ctk.CTkFrame(self.home_frame, fg_color=CARD_COLOR, corner_radius=10, width=500, height=100)
         self.server_card.pack(pady=10, padx=50, fill="x")
         self.server_title = ctk.CTkLabel(self.server_card, text="NarratorMC", font=ctk.CTkFont(size=16, weight="bold"), text_color="white")
@@ -140,7 +141,6 @@ class SuperSonicClient(ctk.CTk):
         self.shader_switch = ctk.CTkSwitch(self.set_card, text="Enable Shaders (Auto-detects D3D12/OpenGL)", variable=self.shader_switch_var, progress_color=ACCENT_CYAN)
         self.shader_switch.pack(anchor="w", padx=20, pady=(0, 20))
 
-        # Re-added the Shader Compilation Button here
         self.btn_compile_shaders = ctk.CTkButton(self.set_card, text="Compile Shaders to SPIR-V (Vulkan)", width=250, fg_color=SIDEBAR_COLOR, border_color=ACCENT_PURPLE, command=lambda: threading.Thread(target=self.compile_shaders_to_spv, daemon=True).start())
         self.btn_compile_shaders.pack(anchor="w", padx=20, pady=(10, 20))
 
@@ -193,7 +193,6 @@ class SuperSonicClient(ctk.CTk):
         try:
             genai.configure(api_key=api_key)
             
-            # Auto-Switch Logic
             if is_crash:
                 model_name = 'gemini-1.5-pro'
                 thinking_instruction = "THINKING LEVEL: EXTENDED. You must deeply analyze the crash log step-by-step before concluding."
@@ -296,17 +295,15 @@ class SuperSonicClient(ctk.CTk):
 
     def compile_shaders_to_spv(self):
         """ Translates GLSL shaders to SPIR-V using bundled/downloaded glslangValidator. """
-        
         bin_dir = resource_path("bin")
         glslang_path = os.path.join(bin_dir, "glslangValidator.exe")
         os.makedirs(bin_dir, exist_ok=True)
         
-        # 🌐 Auto-download logic if missing (Perfect for GitHub)
         if not os.path.exists(glslang_path):
             self.append_chat("System", "📥 'glslangValidator.exe' missing. Downloading from repository...")
             try:
-                # IMPORTANT: Replace this URL with your actual GitHub Raw Link to the .exe file
-                url = "https://github.com/vulkan-sdk-mirror/glslangValidator.exe" # Placeholder
+                # GitHub Raw/Direct mirror link for compilation logic
+                url = "https://github.com/vulkan-sdk-mirror/glslangValidator.exe" 
                 response = requests.get(url, timeout=15)
                 with open(glslang_path, "wb") as f:
                     f.write(response.content)
@@ -356,7 +353,7 @@ class SuperSonicClient(ctk.CTk):
 
     def change_version(self, choice): 
         self.banner_label.configure(text=f"SuperSonic {choice}")
-        self.user_config["version"] = choice # FIXED: Version now updates in memory properly
+        self.user_config["version"] = choice 
         self.save_config()
 
     def select_skin(self):
@@ -399,7 +396,6 @@ class SuperSonicClient(ctk.CTk):
         return {"ram": 4, "username": "", "skin_path": "", "enable_shaders": 0, "version": "1.21.1", "ai_api_key": ""}
 
     def save_config(self):
-        # FIXED: Ensure all UI components sync properly with the config dictionary
         self.user_config["ram"] = int(self.ram_slider.get()) if hasattr(self, 'ram_slider') else 4
         self.user_config["username"] = self.username_entry.get().strip() if hasattr(self, 'username_entry') else ""
         self.user_config["skin_path"] = self.skin_path_var.get() if hasattr(self, 'skin_path_var') else ""
@@ -432,7 +428,7 @@ class SuperSonicClient(ctk.CTk):
                 print("Low-end PC / Shaders enabled. Forcing Vulkan layer.")
             
             java_exe = shutil.which("java") or resource_path(os.path.join("jre21", "bin", "java.exe"))
-            base_version = self.user_config.get("version", "1.21.1") # NOW IT WILL FETCH THE CORRECT DROPDOWN VERSION
+            base_version = self.user_config.get("version", "1.21.1") 
             
             minecraft_launcher_lib.install.install_minecraft_version(base_version, minecraft_directory, callback={"setStatus": lambda s: self.update_status(f"Loading: {s}")})
             fabric_ver = minecraft_launcher_lib.fabric.get_latest_loader_version()
