@@ -23,10 +23,13 @@ ACCENT_PURPLE = "#8B5CF6"
 TEXT_MUTED = "#8A93A6"      
 
 def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev, GitHub repo, and PyInstaller """
     try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
-        base_path = os.path.abspath(".")
+        # If running from local GitHub clone
+        base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
 
 class SuperSonicClient(ctk.CTk):
@@ -136,6 +139,10 @@ class SuperSonicClient(ctk.CTk):
         self.shader_switch_var = ctk.IntVar(value=self.user_config.get("enable_shaders", 0))
         self.shader_switch = ctk.CTkSwitch(self.set_card, text="Enable Shaders (Auto-detects D3D12/OpenGL)", variable=self.shader_switch_var, progress_color=ACCENT_CYAN)
         self.shader_switch.pack(anchor="w", padx=20, pady=(0, 20))
+
+        # Re-added the Shader Compilation Button here
+        self.btn_compile_shaders = ctk.CTkButton(self.set_card, text="Compile Shaders to SPIR-V (Vulkan)", width=250, fg_color=SIDEBAR_COLOR, border_color=ACCENT_PURPLE, command=lambda: threading.Thread(target=self.compile_shaders_to_spv, daemon=True).start())
+        self.btn_compile_shaders.pack(anchor="w", padx=20, pady=(10, 20))
 
     def init_agent_frame(self):
         self.agent_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
@@ -276,7 +283,7 @@ class SuperSonicClient(ctk.CTk):
         except Exception as e:
             self.append_chat("System", f"⚠️ Delete failed: {e}")
 
-    # ==================== GENERAL LOGIC ====================
+    # ==================== GENERAL LOGIC & HARDWARE COMPILATION ====================
     def check_low_end_pc(self):
         try:
             class MEMORYSTATUSEX(ctypes.Structure):
@@ -286,6 +293,66 @@ class SuperSonicClient(ctk.CTk):
             ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat))
             return (stat.ullTotalPhys / (1024**3) < 7.5) or (os.cpu_count() or 4 <= 4)
         except: return False
+
+    def compile_shaders_to_spv(self):
+        """ Translates GLSL shaders to SPIR-V using bundled/downloaded glslangValidator. """
+        
+        bin_dir = resource_path("bin")
+        glslang_path = os.path.join(bin_dir, "glslangValidator.exe")
+        os.makedirs(bin_dir, exist_ok=True)
+        
+        # 🌐 Auto-download logic if missing (Perfect for GitHub)
+        if not os.path.exists(glslang_path):
+            self.append_chat("System", "📥 'glslangValidator.exe' missing. Downloading from repository...")
+            try:
+                # IMPORTANT: Replace this URL with your actual GitHub Raw Link to the .exe file
+                url = "https://github.com/vulkan-sdk-mirror/glslangValidator.exe" # Placeholder
+                response = requests.get(url, timeout=15)
+                with open(glslang_path, "wb") as f:
+                    f.write(response.content)
+                self.append_chat("System", "✅ Compiler component downloaded successfully!")
+            except Exception as e:
+                self.append_chat("System", f"❌ Download failed: {e}. Please add 'glslangValidator.exe' manually to bin/ folder.")
+                return
+
+        mc_dir = minecraft_launcher_lib.utils.get_minecraft_directory()
+        shaderpacks_dir = os.path.join(mc_dir, "shaderpacks")
+        
+        if not os.path.exists(shaderpacks_dir):
+            self.append_chat("System", "⚠️ Shaderpacks folder not found. Install a shaderpack first.")
+            return
+
+        self.append_chat("System", "⚙️ Compiling shaders to SPIR-V using local engine...")
+        compiled_count = 0
+
+        for root, dirs, files in os.walk(shaderpacks_dir):
+            for file in files:
+                if file.endswith((".vsh", ".fsh", ".glsl")):
+                    input_path = os.path.join(root, file)
+                    
+                    if file.endswith(".vsh"):
+                        new_filename = file.replace(".vsh", ".vert.spv")
+                    elif file.endswith(".fsh"):
+                        new_filename = file.replace(".fsh", ".frag.spv")
+                    elif file.endswith(".glsl"):
+                        new_filename = file.replace(".glsl", ".frag.spv")
+                    else:
+                        continue
+                        
+                    output_path = os.path.join(root, new_filename)
+                    cmd = [glslang_path, "-V", input_path, "-o", output_path]
+                    
+                    try:
+                        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        self.append_chat("System", f"✅ Translated: {file} -> {new_filename}")
+                        compiled_count += 1
+                    except subprocess.CalledProcessError:
+                        self.append_chat("System", f"⚠️ Failed to compile: {file}. Syntax error.")
+
+        if compiled_count > 0:
+            self.append_chat("System", f"🎉 Successfully translated {compiled_count} shader files!")
+        else:
+            self.append_chat("System", "ℹ️ No shaders found to compile.")
 
     def change_version(self, choice): 
         self.banner_label.configure(text=f"SuperSonic {choice}")
@@ -361,6 +428,8 @@ class SuperSonicClient(ctk.CTk):
             if is_low_end or self.shader_switch_var.get() == 1:
                 os.environ["MESA_LOADER_DRIVER_OVERRIDE"] = "zink"
                 os.environ["GALLIUM_DRIVER"] = "zink"
+                self.update_status("Vulkan Fallback (Zink) initialized.")
+                print("Low-end PC / Shaders enabled. Forcing Vulkan layer.")
             
             java_exe = shutil.which("java") or resource_path(os.path.join("jre21", "bin", "java.exe"))
             base_version = self.user_config.get("version", "1.21.1") # NOW IT WILL FETCH THE CORRECT DROPDOWN VERSION
