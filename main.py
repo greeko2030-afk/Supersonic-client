@@ -7,11 +7,12 @@ import shutil
 import requests
 import subprocess
 import ctypes
+import urllib.request
+import urllib.error
 import customtkinter as ctk
 from tkinter import filedialog
 from PIL import Image
 import minecraft_launcher_lib
-import google.generativeai as genai
 
 # --- THEME SETTINGS ---
 ctk.set_appearance_mode("dark")
@@ -66,7 +67,7 @@ class SuperSonicClient(ctk.CTk):
         self.btn_versions = self.create_nav_button("⚡ Versions", 2, self.show_versions)
         self.btn_accounts = self.create_nav_button("👤  Accounts", 3, self.show_accounts)
         self.btn_settings = self.create_nav_button("⚙  Settings", 4, self.show_settings)
-        self.btn_agent = self.create_nav_button("🤖 Agent", 5, self.show_agent)
+        self.btn_agent = self.create_nav_button("🤖 Auto-Agent", 5, self.show_agent)
 
         self.status_label = ctk.CTkLabel(self.sidebar_frame, text="Ready.", font=ctk.CTkFont(size=11), text_color=TEXT_MUTED)
         self.status_label.grid(row=7, column=0, padx=20, pady=20, sticky="s")
@@ -144,7 +145,7 @@ class SuperSonicClient(ctk.CTk):
         header_frame.pack(fill="x", padx=40, pady=(40, 10))
         ctk.CTkLabel(header_frame, text="Supersonic Auto-Agent", font=ctk.CTkFont(size=22, weight="bold"), text_color=ACCENT_CYAN).pack(side="left")
         
-        self.api_key_entry = ctk.CTkEntry(header_frame, placeholder_text="Enter Gemini API Key", width=250, show="*")
+        self.api_key_entry = ctk.CTkEntry(header_frame, placeholder_text="Enter Gemini API Key Here", width=250, show="*")
         self.api_key_entry.pack(side="right", padx=(10, 0))
         if self.user_config.get("ai_api_key"): self.api_key_entry.insert(0, self.user_config["ai_api_key"])
 
@@ -153,7 +154,7 @@ class SuperSonicClient(ctk.CTk):
         self.chat_history.insert("end", "SupersonicAI: 100% Autonomous Mode Active. I will watch the game in the background. If a crash happens, I will read the logs, find the missing/broken mod, download it from the internet, install it, and prepare the game automatically. No manual typing required.\n\n")
         self.chat_history.configure(state="disabled")
 
-    # ==================== 100% AUTOMATIC AGENT LOGIC ====================
+    # ==================== 100% AUTOMATIC AGENT LOGIC (NO GOOGLE MODULE REQUIRED) ====================
     def append_chat(self, sender, text):
         self.chat_history.configure(state="normal")
         self.chat_history.insert("end", f"{sender}: {text}\n\n")
@@ -164,7 +165,7 @@ class SuperSonicClient(ctk.CTk):
         """ Fully automatic trigger when game crashes """
         api_key = self.api_key_entry.get().strip()
         if not api_key:
-            self.append_chat("System", "⚠️ Game crashed, but no Gemini API Key is provided for Auto-Fix.")
+            self.append_chat("System", "WARNING: Game crashed, but no Gemini API Key is provided. Please enter it in the top right box of this tab.")
             return
 
         mc_dir = minecraft_launcher_lib.utils.get_minecraft_directory()
@@ -176,26 +177,37 @@ class SuperSonicClient(ctk.CTk):
                 logs = f.readlines()[-60:]
             log_text = "".join(logs)
 
-            self.append_chat("SupersonicAI", "⚙️ Game crash detected! Analyzing logs autonomously...")
+            self.append_chat("SupersonicAI", "Analyzing game crash logs autonomously...")
             threading.Thread(target=self.process_ai_autofix, args=(api_key, log_text), daemon=True).start()
         except Exception as e:
             self.append_chat("System", f"Log read error: {e}")
 
     def process_ai_autofix(self, api_key, log_text):
+        """ Replaced google-generativeai module with standard Python REST API call """
         try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-1.5-pro')
+            sys_prompt = (
+                "You are a 100% autonomous background fixer for Minecraft. "
+                "Read the provided log. "
+                "If a mod is missing or required, reply ONLY with: ACTION: INSTALL_MOD | <modrinth_slug_of_mod> "
+                "If a mod is crashing, reply ONLY with: ACTION: REMOVE_MOD | <filename.jar> "
+                "Do not provide any conversational text. Just the ACTION command."
+            )
             
-            sys_prompt = """
-            You are a 100% autonomous background fixer for Minecraft.
-            Read the provided log. 
-            If a mod is missing or required, reply ONLY with: ACTION: INSTALL_MOD | <modrinth_slug_of_mod>
-            If a mod is crashing, reply ONLY with: ACTION: REMOVE_MOD | <filename.jar>
-            Do not provide any conversational text. Just the ACTION command.
-            """
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={api_key}"
+            headers = {'Content-Type': 'application/json'}
+            payload = {
+                "contents": [{
+                    "parts": [{"text": f"{sys_prompt}\n\nLOGS:\n{log_text}"}]
+                }]
+            }
             
-            response = model.generate_content(f"{sys_prompt}\n\nLOGS:\n{log_text}")
-            reply = response.text.strip()
+            data = json.dumps(payload).encode('utf-8')
+            req = urllib.request.Request(url, data=data, headers=headers, method='POST')
+            
+            with urllib.request.urlopen(req) as response:
+                result = json.loads(response.read().decode('utf-8'))
+                
+            reply = result['candidates'][0]['content']['parts'][0]['text'].strip()
             
             if "ACTION: INSTALL_MOD" in reply:
                 mod_name = reply.split("|")[1].strip()
@@ -209,7 +221,7 @@ class SuperSonicClient(ctk.CTk):
                 self.append_chat("SupersonicAI", "Issue analyzed but requires manual intervention. Error was not a simple mod mismatch.")
                 
         except Exception as e:
-            self.append_chat("System", f"AI Autofix failed: {str(e)}")
+            self.append_chat("System", f"AI Autofix failed: API connection error or Invalid Key.")
 
     def auto_install_mod(self, mod_slug):
         try:
@@ -230,12 +242,12 @@ class SuperSonicClient(ctk.CTk):
                     with open(mod_path, 'wb') as f:
                         f.write(requests.get(file_url).content)
                         
-                    self.append_chat("SupersonicAI", f"✅ Successfully installed {file_name}! You can hit PLAY again.")
+                    self.append_chat("SupersonicAI", f"Successfully installed {file_name}! You can hit PLAY again.")
                     self.update_status("Auto-Fix Complete! Ready.")
                     return
-            self.append_chat("SupersonicAI", f"⚠️ Compatible version of {mod_slug} not found for {version}.")
+            self.append_chat("SupersonicAI", f"Compatible version of {mod_slug} not found for {version}.")
         except Exception as e:
-            self.append_chat("System", f"⚠️ Download failed: {e}")
+            self.append_chat("System", f"Download failed: {e}")
 
     def auto_remove_mod(self, file_name):
         try:
@@ -243,23 +255,20 @@ class SuperSonicClient(ctk.CTk):
             mod_path = os.path.join(mc_dir, "mods", file_name)
             if os.path.exists(mod_path):
                 os.remove(mod_path)
-                self.append_chat("SupersonicAI", f"🗑️ Successfully deleted corrupted mod: {file_name}! You can hit PLAY again.")
+                self.append_chat("SupersonicAI", f"Successfully deleted corrupted mod: {file_name}! You can hit PLAY again.")
                 self.update_status("Auto-Fix Complete! Ready.")
             else:
-                self.append_chat("SupersonicAI", f"⚠️ Mod {file_name} not found.")
+                self.append_chat("SupersonicAI", f"Mod {file_name} not found.")
         except Exception as e:
-            self.append_chat("System", f"⚠️ Auto-remove failed: {e}")
+            self.append_chat("System", f"Auto-remove failed: {e}")
 
     # ==================== INTERNET AUTO-DOWNLOAD ENGINE (VULKAN/D3D12) ====================
     def download_engine_components(self, api_choice):
-        """ Downloads Mesa3D (opengl32.dll for Vulkan Zink translation) and Shaders compilers automatically """
-        
         self.update_status("Checking internet for missing engine files...")
         
         files_to_download = {}
         
         if "Vulkan" in api_choice:
-            # We download the Vulkan Shader Compiler and the Mesa3D Zink DLL for OpenGL translation
             files_to_download["glslangValidator.exe"] = "https://github.com/vulkan-sdk-mirror/glslangValidator.exe"
             files_to_download["opengl32.dll"] = "https://github.com/pal1000/mesa-dist-win/releases/download/23.1.3/opengl32.dll"
         elif "Direct3D12" in api_choice:
@@ -276,12 +285,11 @@ class SuperSonicClient(ctk.CTk):
                         with open(filepath, "wb") as f:
                             f.write(response.content)
                 except Exception:
-                    pass # Fails silently for fallback
+                    pass 
                     
         self.update_status("Engine ready.")
 
     def auto_translate_shaders(self, api_choice):
-        """ Automatically translates shaders in the background without user clicking a button """
         mc_dir = minecraft_launcher_lib.utils.get_minecraft_directory()
         shaderpacks_dir = os.path.join(mc_dir, "shaderpacks")
         if not os.path.exists(shaderpacks_dir): return
@@ -297,7 +305,7 @@ class SuperSonicClient(ctk.CTk):
                         new_ext = ".vert.spv" if file.endswith(".vsh") else ".frag.spv"
                         output_path = os.path.join(root, file.replace(file[-4:], new_ext))
                         
-                        if not os.path.exists(output_path): # Compile only if not already done
+                        if not os.path.exists(output_path): 
                             subprocess.run([glslang_path, "-V", input_path, "-o", output_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     # ==================== GENERAL LOGIC ====================
@@ -325,7 +333,7 @@ class SuperSonicClient(ctk.CTk):
 
     def update_ram_label(self, value):
         self.ram_label_var.set(f"RAM Allocation: {int(value)} GB")
-        self.info_label.configure(text=f"Fabric Loader • {int(value)*1024} MB RAM")
+        self.info_label.configure(text=f"Fabric Loader - {int(value)*1024} MB RAM")
 
     def update_status(self, text):
         self.status_label.configure(text=text)
@@ -352,41 +360,34 @@ class SuperSonicClient(ctk.CTk):
     def start_game_thread(self):
         username = self.username_entry.get().strip()
         if not username:
-            self.update_status("⚠️ Enter username in Accounts tab!")
+            self.update_status("WARNING: Enter username in Accounts tab!")
             self.show_accounts()
             return
             
         self.save_config()
         self.play_button.configure(state="disabled", text="INITIALIZING...")
         
-        # Start download & translation in background, then launch
         threading.Thread(target=self.prepare_and_launch, args=(username,), daemon=True).start()
 
     def prepare_and_launch(self, username):
         try:
             api_choice = self.api_dropdown.get()
             
-            # Step 1: Auto Download Missing Internet Files
             self.download_engine_components(api_choice)
-            
-            # Step 2: Auto Translate Shaders based on API
             self.auto_translate_shaders(api_choice)
-            
             self.launch_game(username, api_choice)
         except Exception as e:
-            self.update_status(f"⚠️ Error: {e}")
-            self.play_button.configure(state="normal", text="▶ PLAY")
+            self.update_status(f"Error: {e}")
+            self.play_button.configure(state="normal", text="PLAY")
 
     def launch_game(self, username, api_choice):
         try:
             minecraft_directory = minecraft_launcher_lib.utils.get_minecraft_directory()
             
-            # --- AUTO VULKAN / D3D12 ENVIRONMENT SETUP ---
             mesa_dll_path = os.path.join(self.appdata_dir, "opengl32.dll")
             java_bin_dir = resource_path(os.path.join("jre21", "bin"))
             target_dll_path = os.path.join(java_bin_dir, "opengl32.dll")
             
-            # If Vulkan/D3D12 is selected, we inject the Mesa3D DLL into Java's bin
             if "Default OpenGL" not in api_choice and os.path.exists(mesa_dll_path):
                 shutil.copy2(mesa_dll_path, target_dll_path)
                 
@@ -399,7 +400,6 @@ class SuperSonicClient(ctk.CTk):
                     os.environ["GALLIUM_DRIVER"] = "d3d12"
                     self.update_status("Mesa3D Direct3D12 Translator Active.")
             else:
-                # Remove injected DLL if Default OpenGL is chosen to prevent interference
                 if os.path.exists(target_dll_path): os.remove(target_dll_path)
                 os.environ.pop("MESA_LOADER_DRIVER_OVERRIDE", None)
                 os.environ.pop("GALLIUM_DRIVER", None)
@@ -427,15 +427,15 @@ class SuperSonicClient(ctk.CTk):
             process.wait() 
 
             if process.returncode != 0:
-                self.update_status("⚠️ Crash Detected! Agent Autofixing...")
+                self.update_status("Crash Detected! Agent Autofixing...")
                 self.trigger_background_autofix() 
             else:
                 self.update_status("Ready.")
             
         except Exception as e:
-            self.update_status(f"⚠️ Error: {e}")
+            self.update_status(f"Error: {e}")
         finally:
-            self.play_button.configure(state="normal", text="▶ PLAY")
+            self.play_button.configure(state="normal", text="PLAY")
 
 if __name__ == "__main__":
     app = SuperSonicClient()
