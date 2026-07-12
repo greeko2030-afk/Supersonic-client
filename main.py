@@ -177,8 +177,10 @@ class SuperSonicClient(ctk.CTk):
         self.ram_slider.pack(anchor="w", padx=20, pady=(0, 20))
 
         ctk.CTkLabel(set_card, text="Graphics Backend Pipeline:", font=ctk.CTkFont(size=14)).pack(anchor="w", padx=20, pady=(10, 5))
-        self.api_dropdown = ctk.CTkOptionMenu(set_card, values=["Vulkan (Zink Auto-Translate)", "Direct3D12", "Default OpenGL"], button_color=ACCENT_PURPLE)
-        self.api_dropdown.set(self.user_config.get("graphics_api", "Direct3D12"))
+        # Updated Dropdown Options
+        api_options = ["Auto (D3D12 -> Vulkan Fallback)", "Direct3D12 (Dozen)", "Vulkan (Zink)", "Default OpenGL"]
+        self.api_dropdown = ctk.CTkOptionMenu(set_card, values=api_options, button_color=ACCENT_PURPLE)
+        self.api_dropdown.set(self.user_config.get("graphics_api", "Auto (D3D12 -> Vulkan Fallback)"))
         self.api_dropdown.pack(anchor="w", padx=20, pady=(0, 20))
 
         ctk.CTkLabel(set_card, text="Select Profile Game Version:", font=ctk.CTkFont(size=14)).pack(anchor="w", padx=20, pady=(10, 5))
@@ -368,11 +370,25 @@ class SuperSonicClient(ctk.CTk):
             self.append_chat("System", "Automation diagnostic pipeline executed via hardcoded keys successfully.")
 
     # ==================== GENERAL BOOT LAUNCH SYSTEM ====================
-    def download_engine_components(self, api_choice):
-        files = {}
-        if "Vulkan" in api_choice:
-            files["glslangValidator.exe"] = "https://github.com/vulkan-sdk-mirror/glslangValidator.exe"
-            files["opengl32.dll"] = "https://github.com/pal1000/mesa-dist-win/releases/download/23.1.3/opengl32.dll"
+    def has_dedicated_gpu(self):
+        """Checks if a dedicated GPU (NVIDIA/AMD) is present using Windows wmic."""
+        if os.name != 'nt': return False
+        try:
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            output = subprocess.check_output("wmic path win32_VideoController get name", startupinfo=si, text=True).lower()
+            if any(brand in output for brand in ["nvidia", "rtx", "gtx", "radeon rx", "radeon pro"]):
+                return True
+            return False
+        except Exception:
+            return False
+
+    def download_engine_components(self):
+        """Always download the Mesa OpenGL translation layer to appdata bin"""
+        files = {
+            "glslangValidator.exe": "https://github.com/vulkan-sdk-mirror/glslangValidator.exe",
+            "opengl32.dll": "https://github.com/pal1000/mesa-dist-win/releases/download/23.1.3/opengl32.dll"
+        }
         for filename, url in files.items():
             filepath = os.path.join(self.appdata_dir, filename)
             if not os.path.exists(filepath):
@@ -400,11 +416,11 @@ class SuperSonicClient(ctk.CTk):
             try:
                 with open(self.config_file, "r") as f: return json.load(f)
             except: pass
-        return {"ram": 4, "username": "Player", "graphics_api": "Direct3D12", "version": "1.21.1", "alt_accounts": ["Player"]}
+        return {"ram": 4, "username": "Player", "graphics_api": "Auto (D3D12 -> Vulkan Fallback)", "version": "1.21.1", "alt_accounts": ["Player"]}
 
     def save_config(self):
         self.user_config["ram"] = int(self.ram_slider.get()) if hasattr(self, 'ram_slider') else 4
-        self.user_config["graphics_api"] = self.api_dropdown.get() if hasattr(self, 'api_dropdown') else "Direct3D12"
+        self.user_config["graphics_api"] = self.api_dropdown.get() if hasattr(self, 'api_dropdown') else "Auto (D3D12 -> Vulkan Fallback)"
         self.user_config["version"] = self.version_dropdown.get() if hasattr(self, 'version_dropdown') else "1.21.1"
         try:
             with open(self.config_file, "w") as f: json.dump(self.user_config, f, indent=4)
@@ -412,14 +428,13 @@ class SuperSonicClient(ctk.CTk):
 
     def prepare_and_launch(self, username):
         try:
-            api_choice = self.api_dropdown.get()
-            self.download_engine_components(api_choice)
-            self.launch_game(username, api_choice)
+            self.download_engine_components()
+            self.launch_game(username)
         except Exception as e:
             self.update_status(f"Launch Error: {e}")
             self.play_button.configure(state="normal", text="▶ PLAY", fg_color=ACCENT_PURPLE)
 
-    def launch_game(self, username, api_choice):
+    def launch_game(self, username):
         try:
             minecraft_directory = minecraft_launcher_lib.utils.get_minecraft_directory()
             base_version = self.user_config.get("version", "1.21.1")
@@ -439,10 +454,37 @@ class SuperSonicClient(ctk.CTk):
 
             command = minecraft_launcher_lib.command.get_minecraft_command(f"fabric-loader-{fabric_ver}-{base_version}", minecraft_directory, options)
             
-            self.play_button.configure(state="normal", text="🛑 STOP GAME", fg_color="#ef4444", hover_color="#dc2626")
-            self.update_status("Game engine is active.")
+            # --- GRAPHICS API RESOLUTION & ENVIRONMENT INJECTION ---
+            selected_api = self.user_config.get("graphics_api", "Auto (D3D12 -> Vulkan Fallback)")
+            actual_api = selected_api
 
-            self.game_process = subprocess.Popen(command)
+            if "Auto" in selected_api:
+                if self.has_dedicated_gpu():
+                    actual_api = "Direct3D12 (Dozen)"
+                else:
+                    actual_api = "Vulkan (Zink)"
+
+            custom_env = os.environ.copy()
+            
+            if "Direct3D12" in actual_api or "Vulkan" in actual_api:
+                # Prepend appdata_dir so Java loads our custom opengl32.dll first instead of System32
+                custom_env["PATH"] = self.appdata_dir + os.pathsep + custom_env.get("PATH", "")
+                custom_env["MESA_GL_VERSION_OVERRIDE"] = "4.6"
+                custom_env["MESA_GLSL_VERSION_OVERRIDE"] = "460"
+                
+                if "Direct3D12" in actual_api:
+                    custom_env["GALLIUM_DRIVER"] = "d3d12"
+                    self.update_status("Game engine is active. API: Direct3D12 (Mesa Dozen)")
+                else:
+                    custom_env["GALLIUM_DRIVER"] = "zink"
+                    self.update_status("Game engine is active. API: Vulkan (Mesa Zink)")
+            else:
+                self.update_status("Game engine is active. API: System Default OpenGL")
+
+            self.play_button.configure(state="normal", text="🛑 STOP GAME", fg_color="#ef4444", hover_color="#dc2626")
+
+            # Running process with injected Environment Variables
+            self.game_process = subprocess.Popen(command, env=custom_env)
             self.game_process.wait()
 
             if self.game_process.returncode != 0 and self.game_process.returncode != -1:
