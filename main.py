@@ -33,7 +33,7 @@ class SuperSonicClient(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("SuperSonic Client - Ultimate Edition")
+        self.title("SuperSonic Client")
         self.geometry("1100x720")
         self.resizable(False, False)
         self.configure(fg_color=BG_COLOR)
@@ -50,12 +50,21 @@ class SuperSonicClient(ctk.CTk):
         self.grid_columnconfigure(1, weight=1)
 
         # ==================== SIDEBAR ====================
-        self.sidebar_frame = ctk.CTkFrame(self, width=230, corner_radius=0, fg_color=SIDEBAR_COLOR)
+        self.sidebar_frame = ctk.CTkFrame(self, width=240, corner_radius=0, fg_color=SIDEBAR_COLOR)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
         self.sidebar_frame.grid_rowconfigure(8, weight=1)
 
-        self.logo_label = ctk.CTkLabel(self.sidebar_frame, text="❖ SuperSonic\nU L T I M A T E", font=ctk.CTkFont(size=20, weight="bold"), text_color=ACCENT_CYAN)
-        self.logo_label.grid(row=0, column=0, padx=20, pady=(30, 25))
+        # Load Custom Logo Image (1000117781.png)
+        try:
+            logo_img = ctk.CTkImage(light_image=Image.open(resource_path("1000117781.png")), 
+                                    dark_image=Image.open(resource_path("1000117781.png")), 
+                                    size=(45, 45))
+            self.logo_label = ctk.CTkLabel(self.sidebar_frame, image=logo_img, text=" SuperSonic\n Client", 
+                                           font=ctk.CTkFont(size=18, weight="bold"), text_color=ACCENT_CYAN, compound="left", justify="left")
+        except Exception:
+            self.logo_label = ctk.CTkLabel(self.sidebar_frame, text="❖ SuperSonic\nClient", font=ctk.CTkFont(size=18, weight="bold"), text_color=ACCENT_CYAN, justify="left")
+            
+        self.logo_label.grid(row=0, column=0, padx=15, pady=(30, 25), sticky="w")
 
         self.btn_home = self.create_nav_button("⌂  Home", 1, self.show_home)
         self.btn_mods = self.create_nav_button("📦 Mods Manager", 2, self.show_mods)
@@ -175,13 +184,6 @@ class SuperSonicClient(ctk.CTk):
         self.ram_slider = ctk.CTkSlider(set_card, from_=1, to=16, number_of_steps=15, width=420, button_color=ACCENT_CYAN, command=self.update_ram_label)
         self.ram_slider.set(self.user_config.get("ram", 4))
         self.ram_slider.pack(anchor="w", padx=20, pady=(0, 20))
-
-        ctk.CTkLabel(set_card, text="Graphics Backend Pipeline:", font=ctk.CTkFont(size=14)).pack(anchor="w", padx=20, pady=(10, 5))
-        # Updated Dropdown Options
-        api_options = ["Auto (D3D12 -> Vulkan Fallback)", "Direct3D12 (Dozen)", "Vulkan (Zink)", "Default OpenGL"]
-        self.api_dropdown = ctk.CTkOptionMenu(set_card, values=api_options, button_color=ACCENT_PURPLE)
-        self.api_dropdown.set(self.user_config.get("graphics_api", "Auto (D3D12 -> Vulkan Fallback)"))
-        self.api_dropdown.pack(anchor="w", padx=20, pady=(0, 20))
 
         ctk.CTkLabel(set_card, text="Select Profile Game Version:", font=ctk.CTkFont(size=14)).pack(anchor="w", padx=20, pady=(10, 5))
         self.version_dropdown = ctk.CTkOptionMenu(set_card, values=["1.21.4", "1.21.1", "1.21", "1.20.6"], command=self.change_version, button_color=ACCENT_CYAN, text_color="black")
@@ -370,19 +372,6 @@ class SuperSonicClient(ctk.CTk):
             self.append_chat("System", "Automation diagnostic pipeline executed via hardcoded keys successfully.")
 
     # ==================== GENERAL BOOT LAUNCH SYSTEM ====================
-    def has_dedicated_gpu(self):
-        """Checks if a dedicated GPU (NVIDIA/AMD) is present using Windows wmic."""
-        if os.name != 'nt': return False
-        try:
-            si = subprocess.STARTUPINFO()
-            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            output = subprocess.check_output("wmic path win32_VideoController get name", startupinfo=si, text=True).lower()
-            if any(brand in output for brand in ["nvidia", "rtx", "gtx", "radeon rx", "radeon pro"]):
-                return True
-            return False
-        except Exception:
-            return False
-
     def download_engine_components(self):
         """Always download the Mesa OpenGL translation layer to appdata bin"""
         files = {
@@ -416,11 +405,10 @@ class SuperSonicClient(ctk.CTk):
             try:
                 with open(self.config_file, "r") as f: return json.load(f)
             except: pass
-        return {"ram": 4, "username": "Player", "graphics_api": "Auto (D3D12 -> Vulkan Fallback)", "version": "1.21.1", "alt_accounts": ["Player"]}
+        return {"ram": 4, "username": "Player", "version": "1.21.1", "alt_accounts": ["Player"]}
 
     def save_config(self):
         self.user_config["ram"] = int(self.ram_slider.get()) if hasattr(self, 'ram_slider') else 4
-        self.user_config["graphics_api"] = self.api_dropdown.get() if hasattr(self, 'api_dropdown') else "Auto (D3D12 -> Vulkan Fallback)"
         self.user_config["version"] = self.version_dropdown.get() if hasattr(self, 'version_dropdown') else "1.21.1"
         try:
             with open(self.config_file, "w") as f: json.dump(self.user_config, f, indent=4)
@@ -455,31 +443,17 @@ class SuperSonicClient(ctk.CTk):
             command = minecraft_launcher_lib.command.get_minecraft_command(f"fabric-loader-{fabric_ver}-{base_version}", minecraft_directory, options)
             
             # --- GRAPHICS API RESOLUTION & ENVIRONMENT INJECTION ---
-            selected_api = self.user_config.get("graphics_api", "Auto (D3D12 -> Vulkan Fallback)")
-            actual_api = selected_api
-
-            if "Auto" in selected_api:
-                if self.has_dedicated_gpu():
-                    actual_api = "Direct3D12 (Dozen)"
-                else:
-                    actual_api = "Vulkan (Zink)"
-
             custom_env = os.environ.copy()
             
-            if "Direct3D12" in actual_api or "Vulkan" in actual_api:
-                # Prepend appdata_dir so Java loads our custom opengl32.dll first instead of System32
-                custom_env["PATH"] = self.appdata_dir + os.pathsep + custom_env.get("PATH", "")
-                custom_env["MESA_GL_VERSION_OVERRIDE"] = "4.6"
-                custom_env["MESA_GLSL_VERSION_OVERRIDE"] = "460"
-                
-                if "Direct3D12" in actual_api:
-                    custom_env["GALLIUM_DRIVER"] = "d3d12"
-                    self.update_status("Game engine is active. API: Direct3D12 (Mesa Dozen)")
-                else:
-                    custom_env["GALLIUM_DRIVER"] = "zink"
-                    self.update_status("Game engine is active. API: Vulkan (Mesa Zink)")
-            else:
-                self.update_status("Game engine is active. API: System Default OpenGL")
+            # Prepend appdata_dir so Java loads our custom opengl32.dll first instead of System32
+            custom_env["PATH"] = self.appdata_dir + os.pathsep + custom_env.get("PATH", "")
+            
+            # These overrides ensure Shaders and Mods translate properly to D3D12 via Mesa
+            custom_env["MESA_GL_VERSION_OVERRIDE"] = "4.6"
+            custom_env["MESA_GLSL_VERSION_OVERRIDE"] = "460"
+            custom_env["GALLIUM_DRIVER"] = "d3d12"
+            
+            self.update_status("Game engine is active. API: Direct3D12 (Mesa Dozen)")
 
             self.play_button.configure(state="normal", text="🛑 STOP GAME", fg_color="#ef4444", hover_color="#dc2626")
 
