@@ -372,20 +372,36 @@ class SuperSonicClient(ctk.CTk):
             self.append_chat("System", "Automation diagnostic pipeline executed via hardcoded keys successfully.")
 
     # ==================== GENERAL BOOT LAUNCH SYSTEM ====================
-    def download_engine_components(self):
-        """Always download the Mesa OpenGL translation layer to appdata bin"""
+    def setup_engine_components(self):
+        """Extract engine components from EXE resources or download fallback if missing"""
         files = {
             "glslangValidator.exe": "https://github.com/vulkan-sdk-mirror/glslangValidator.exe",
             "opengl32.dll": "https://github.com/pal1000/mesa-dist-win/releases/download/23.1.3/opengl32.dll"
         }
         for filename, url in files.items():
-            filepath = os.path.join(self.appdata_dir, filename)
-            if not os.path.exists(filepath):
-                try:
-                    res = requests.get(url, timeout=15)
-                    if res.status_code == 200:
-                        with open(filepath, "wb") as f: f.write(res.content)
-                except Exception: pass
+            target_path = os.path.join(self.appdata_dir, filename)
+            bundled_path = resource_path(filename)
+            
+            # 1. First, check if files are bundled inside the EXE
+            if os.path.exists(bundled_path) and not os.path.isdir(bundled_path):
+                # If target missing or corrupted/incomplete size, copy from inner resource
+                if not os.path.exists(target_path) or os.path.getsize(target_path) != os.path.getsize(bundled_path):
+                    try:
+                        self.update_status(f"Extracting {filename} from application bundle...")
+                        shutil.copy2(bundled_path, target_path)
+                    except Exception: 
+                        pass
+            else:
+                # 2. Fallback to downloading from network if not bundled inside the EXE
+                if not os.path.exists(target_path) or os.path.getsize(target_path) < 500000:
+                    try:
+                        self.update_status(f"Downloading {filename} engine components...")
+                        res = requests.get(url, timeout=15)
+                        if res.status_code == 200:
+                            with open(target_path, "wb") as f: 
+                                f.write(res.content)
+                    except Exception: 
+                        pass
 
     def change_version(self, choice):
         self.banner_label.configure(text=f"SuperSonic Client {choice}")
@@ -416,7 +432,7 @@ class SuperSonicClient(ctk.CTk):
 
     def prepare_and_launch(self, username):
         try:
-            self.download_engine_components()
+            self.setup_engine_components()
             self.launch_game(username)
         except Exception as e:
             self.update_status(f"Launch Error: {e}")
