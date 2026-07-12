@@ -178,7 +178,7 @@ class SuperSonicClient(ctk.CTk):
 
         ctk.CTkLabel(set_card, text="Graphics Backend Pipeline:", font=ctk.CTkFont(size=14)).pack(anchor="w", padx=20, pady=(10, 5))
         self.api_dropdown = ctk.CTkOptionMenu(set_card, values=["Vulkan (Zink Auto-Translate)", "Direct3D12", "Default OpenGL"], button_color=ACCENT_PURPLE)
-        self.api_dropdown.set(self.user_config.get("graphics_api", "Vulkan (Zink Auto-Translate)"))
+        self.api_dropdown.set(self.user_config.get("graphics_api", "Direct3D12"))
         self.api_dropdown.pack(anchor="w", padx=20, pady=(0, 20))
 
         ctk.CTkLabel(set_card, text="Select Profile Game Version:", font=ctk.CTkFont(size=14)).pack(anchor="w", padx=20, pady=(10, 5))
@@ -204,7 +204,6 @@ class SuperSonicClient(ctk.CTk):
 
     def handle_play_toggle(self):
         if self.game_process and self.game_process.poll() is None:
-            # Game is currently running, stop it completely
             try:
                 self.game_process.terminate()
                 self.game_process.kill()
@@ -213,7 +212,6 @@ class SuperSonicClient(ctk.CTk):
             except Exception as e:
                 self.update_status(f"Failed to close instance: {e}")
         else:
-            # Start game pipeline
             username = self.user_config.get("username", "Player")
             self.save_config()
             self.play_button.configure(state="disabled", text="RUNNING...")
@@ -239,7 +237,6 @@ class SuperSonicClient(ctk.CTk):
         
         for w in self.mods_scroll.winfo_children(): w.destroy()
 
-        # Phase 1: Search Modrinth API
         try:
             url = f"https://api.modrinth.com/v2/search?query={query}&facets=[[%22project_type:mod%22]]"
             res = requests.get(url, timeout=10).json()
@@ -249,9 +246,7 @@ class SuperSonicClient(ctk.CTk):
                 self.render_mod_results(hits, is_modrinth=True)
                 self.update_status("Search results fetched from Modrinth database.")
             else:
-                # Phase 2: Fallback to CurseForge via query web routing simulation
                 self.update_status("No results on Modrinth. Executing CurseForge Fallback...")
-                # Mock structure or route redirecting if exact payload fails without strict token mapping
                 self.render_curseforge_fallback_ui(query)
         except Exception as e:
             self.update_status(f"Query routing anomaly: {e}")
@@ -405,11 +400,11 @@ class SuperSonicClient(ctk.CTk):
             try:
                 with open(self.config_file, "r") as f: return json.load(f)
             except: pass
-        return {"ram": 4, "username": "Player", "graphics_api": "Vulkan (Zink Auto-Translate)", "version": "1.21.1", "alt_accounts": ["Player"]}
+        return {"ram": 4, "username": "Player", "graphics_api": "Direct3D12", "version": "1.21.1", "alt_accounts": ["Player"]}
 
     def save_config(self):
         self.user_config["ram"] = int(self.ram_slider.get()) if hasattr(self, 'ram_slider') else 4
-        self.user_config["graphics_api"] = self.api_dropdown.get() if hasattr(self, 'api_dropdown') else "Vulkan (Zink Auto-Translate)"
+        self.user_config["graphics_api"] = self.api_dropdown.get() if hasattr(self, 'api_dropdown') else "Direct3D12"
         self.user_config["version"] = self.version_dropdown.get() if hasattr(self, 'version_dropdown') else "1.21.1"
         try:
             with open(self.config_file, "w") as f: json.dump(self.user_config, f, indent=4)
@@ -444,7 +439,6 @@ class SuperSonicClient(ctk.CTk):
 
             command = minecraft_launcher_lib.command.get_minecraft_command(f"fabric-loader-{fabric_ver}-{base_version}", minecraft_directory, options)
             
-            # Change UI to reflects Active Subprocess State
             self.play_button.configure(state="normal", text="🛑 STOP GAME", fg_color="#ef4444", hover_color="#dc2626")
             self.update_status("Game engine is active.")
 
