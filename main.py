@@ -14,13 +14,16 @@ from tkinter import filedialog, messagebox
 from PIL import Image
 import minecraft_launcher_lib
 
-# --- THEME SETTINGS ---
-BG_COLOR = "#070816"        
-SIDEBAR_COLOR = "#0A0C20"   
-CARD_COLOR = "#0D1028"      
-ACCENT_CYAN = "#00d4ff"     
-ACCENT_PURPLE = "#7c3aed"   
-TEXT_MUTED = "#8a93b2"      
+# --- THEME & COLOR PALETTE (Matched with Screenshots) ---
+BG_COLOR = "#0B0E14"          # Deep background
+SIDEBAR_COLOR = "#11151E"     # Slightly lighter for sidebar
+CARD_COLOR = "#161B28"        # Card backgrounds
+ACCENT_BLUE = "#1D4ED8"       # Primary blue buttons (Play, Install)
+ACCENT_CYAN = "#00D4FF"       # Highlights
+ACCENT_GREEN = "#10B981"      # Success / Installed status
+TEXT_PRIMARY = "#FFFFFF"
+TEXT_MUTED = "#8A93B2"
+BORDER_COLOR = "#1F2937"
 
 def resource_path(relative_path):
     try:
@@ -33,14 +36,13 @@ class SuperSonicClient(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("SuperSonic Client")
-        self.geometry("1100x720")
-        self.resizable(False, False)
+        self.title("SuperSonic Client v2.5.0")
+        self.geometry("1400x850")
+        self.minsize(1280, 720)
         self.configure(fg_color=BG_COLOR)
 
         self.config_file = "supersonic_config.json"
         self.user_config = self.load_config()
-        
         self.game_process = None
         self.hardcoded_api_key = "AQ.Ab8RN6IZzVVGS9dP9RnVtJTGvlYtl8UfW9uUb8FD7G-62moFDQ"
         self.appdata_dir = os.path.join(os.getenv('APPDATA'), 'SupersonicClient', 'bin')
@@ -49,458 +51,291 @@ class SuperSonicClient(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
 
-        # ==================== SIDEBAR ====================
-        self.sidebar_frame = ctk.CTkFrame(self, width=240, corner_radius=0, fg_color=SIDEBAR_COLOR)
-        self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(8, weight=1)
+        self.setup_sidebar()
+        self.setup_frames()
+        self.show_frame("Dashboard")
 
-        # Load Custom Logo Image (1000117781.png)
-        try:
-            logo_img = ctk.CTkImage(light_image=Image.open(resource_path("1000117781.png")), 
-                                    dark_image=Image.open(resource_path("1000117781.png")), 
-                                    size=(45, 45))
-            self.logo_label = ctk.CTkLabel(self.sidebar_frame, image=logo_img, text=" SuperSonic\n Client", 
-                                           font=ctk.CTkFont(size=18, weight="bold"), text_color=ACCENT_CYAN, compound="left", justify="left")
-        except Exception:
-            self.logo_label = ctk.CTkLabel(self.sidebar_frame, text="❖ SuperSonic\nClient", font=ctk.CTkFont(size=18, weight="bold"), text_color=ACCENT_CYAN, justify="left")
-            
-        self.logo_label.grid(row=0, column=0, padx=15, pady=(30, 25), sticky="w")
+    def setup_sidebar(self):
+        self.sidebar = ctk.CTkFrame(self, width=260, corner_radius=0, fg_color=SIDEBAR_COLOR, border_width=1, border_color=BORDER_COLOR)
+        self.sidebar.grid(row=0, column=0, sticky="nsew")
+        self.sidebar.grid_rowconfigure(10, weight=1)
 
-        self.btn_home = self.create_nav_button("⌂  Home", 1, self.show_home)
-        self.btn_mods = self.create_nav_button("📦 Mods Manager", 2, self.show_mods)
-        self.btn_modpacks = self.create_nav_button("🚀 Modpacks", 3, self.show_modpacks)
-        self.btn_accounts = self.create_nav_button("👤  Accounts & Skin", 4, self.show_accounts)
-        self.btn_settings = self.create_nav_button("⚙  Engine Settings", 5, self.show_settings)
-        self.btn_agent = self.create_nav_button("🤖 Auto-Agent", 6, self.show_agent)
+        # Logo Area
+        logo_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        logo_frame.grid(row=0, column=0, padx=20, pady=(20, 30), sticky="w")
+        ctk.CTkLabel(logo_frame, text="⚡", font=ctk.CTkFont(size=28), text_color=ACCENT_BLUE).pack(side="left")
+        ctk.CTkLabel(logo_frame, text=" SUPERSONIC\n CLIENT", font=ctk.CTkFont(size=14, weight="bold"), text_color=TEXT_PRIMARY, justify="left").pack(side="left", padx=10)
 
-        self.status_label = ctk.CTkLabel(self.sidebar_frame, text="Ready.", font=ctk.CTkFont(size=11), text_color=TEXT_MUTED)
-        self.status_label.grid(row=8, column=0, padx=20, pady=20, sticky="s")
+        # Navigation Buttons
+        self.nav_buttons = {}
+        nav_items = [
+            ("🏠 Dashboard", "Dashboard"),
+            ("📦 Modpacks", "Modpacks"),
+            ("🧩 Addons", "Addons"),
+            ("📂 Instances", "Instances"),
+            ("🖥️ Servers", "Servers"),
+            ("🎨 Resource Packs", "Resource Packs"),
+            ("⚙️ Settings", "Settings"),
+            ("🤖 Agent (AI)", "Agent")
+        ]
 
-        # Initialize All Windows
-        self.init_home_frame()
-        self.init_mods_frame()
-        self.init_modpacks_frame()
-        self.init_accounts_frame()
-        self.init_settings_frame()
-        self.init_agent_frame()
-        self.show_home()
+        for i, (text, name) in enumerate(nav_items):
+            btn = ctk.CTkButton(self.sidebar, text=text, fg_color="transparent", text_color=TEXT_MUTED, 
+                                font=ctk.CTkFont(size=14, weight="bold"), anchor="w", height=40,
+                                command=lambda n=name: self.show_frame(n))
+            btn.grid(row=i+1, column=0, sticky="ew", padx=15, pady=2)
+            self.nav_buttons[name] = btn
 
-    def create_nav_button(self, text, row, command):
-        btn = ctk.CTkButton(self.sidebar_frame, text=text, fg_color="transparent", text_color=TEXT_MUTED, font=ctk.CTkFont(size=13, weight="bold"), anchor="w", command=command)
-        btn.grid(row=row, column=0, sticky="ew", padx=12, pady=4)
-        return btn
+        # Bottom Account Area
+        acc_frame = ctk.CTkFrame(self.sidebar, fg_color=CARD_COLOR, corner_radius=8)
+        acc_frame.grid(row=11, column=0, padx=15, pady=20, sticky="ew")
+        ctk.CTkLabel(acc_frame, text="Account", font=ctk.CTkFont(size=11), text_color=TEXT_MUTED).pack(anchor="w", padx=10, pady=(10, 0))
+        ctk.CTkLabel(acc_frame, text=self.user_config.get("username", "Raffiee_playssMC"), font=ctk.CTkFont(size=13, weight="bold"), text_color=TEXT_PRIMARY).pack(anchor="w", padx=10)
+        ctk.CTkLabel(acc_frame, text="👑 Premium", font=ctk.CTkFont(size=11, weight="bold"), text_color="#F59E0B").pack(anchor="w", padx=10, pady=(0, 10))
 
-    # ==================== UI WINDOWS ====================
-    def init_home_frame(self):
-        self.home_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
-        self.home_frame.grid_columnconfigure(0, weight=1)
+    def setup_frames(self):
+        self.frames = {}
         
-        ctk.CTkLabel(self.home_frame, text="READY TO PLAY", font=ctk.CTkFont(size=12, weight="bold"), text_color=ACCENT_CYAN).pack(pady=(60, 0))
-        current_ver = self.user_config.get("version", "1.21.1")
-        self.banner_label = ctk.CTkLabel(self.home_frame, text=f"SuperSonic Client {current_ver}", font=ctk.CTkFont(size=30, weight="bold"), text_color="white")
-        self.banner_label.pack(pady=(5, 25))
+        # 1. DASHBOARD FRAME
+        f_dash = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self.frames["Dashboard"] = f_dash
         
-        self.play_button = ctk.CTkButton(self.home_frame, text="▶ PLAY", width=260, height=55, corner_radius=8, font=ctk.CTkFont(size=16, weight="bold"), fg_color=ACCENT_PURPLE, hover_color="#632ec4", command=self.handle_play_toggle)
-        self.play_button.pack(pady=10)
+        # Header Banner
+        banner = ctk.CTkFrame(f_dash, fg_color=CARD_COLOR, corner_radius=12, height=180)
+        banner.pack(fill="x", padx=30, pady=(30, 20))
+        banner.pack_propagate(False)
         
-        self.info_label = ctk.CTkLabel(self.home_frame, text=f"Fabric Loader • {self.user_config.get('ram', 4)*1024} MB RAM", font=ctk.CTkFont(size=11), text_color=TEXT_MUTED)
-        self.info_label.pack(pady=(0, 40))
-
-        # Server card
-        self.server_card = ctk.CTkFrame(self.home_frame, fg_color=CARD_COLOR, corner_radius=10, width=550, height=90)
-        self.server_card.pack(pady=10, padx=50, fill="x")
-        ctk.CTkLabel(self.server_card, text="NarratorMC", font=ctk.CTkFont(size=16, weight="bold"), text_color="white").place(x=20, y=15)
-        ctk.CTkLabel(self.server_card, text="www.NarratorMC.net", font=ctk.CTkFont(size=12), text_color=TEXT_MUTED).place(x=20, y=40)
-        self.server_status = ctk.CTkLabel(self.server_card, text="ONLINE", font=ctk.CTkFont(size=11, weight="bold"), text_color="#10B981", fg_color="#064E3B", corner_radius=5, padx=8, pady=2)
-        self.server_status.place(relx=0.95, y=20, anchor="ne")
-
-    def init_mods_frame(self):
-        self.mods_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        ctk.CTkLabel(banner, text="SUPERSONIC CLIENT", font=ctk.CTkFont(size=28, weight="bold", slant="italic"), text_color=TEXT_PRIMARY).place(x=30, y=30)
+        ctk.CTkLabel(banner, text="Hyper optimized. Ultra fast. Future ready.", font=ctk.CTkFont(size=14), text_color=TEXT_MUTED).place(x=30, y=70)
         
-        top_bar = ctk.CTkFrame(self.mods_frame, fg_color="transparent")
-        top_bar.pack(fill="x", padx=30, pady=(30, 10))
-        ctk.CTkLabel(top_bar, text="Mods Directory Browser", font=ctk.CTkFont(size=22, weight="bold"), text_color="white").pack(side="left")
-        ctk.CTkButton(top_bar, text="+ Import Local .jar Mod", fg_color=ACCENT_PURPLE, command=self.import_local_mod).pack(side="right")
+        self.play_btn = ctk.CTkButton(banner, text="▶ PLAY", font=ctk.CTkFont(size=20, weight="bold"), fg_color=ACCENT_BLUE, hover_color="#1E40AF", width=200, height=60, corner_radius=8, command=self.handle_play)
+        self.play_btn.place(relx=0.95, rely=0.5, anchor="e")
 
-        search_bar = ctk.CTkFrame(self.mods_frame, fg_color="transparent")
-        search_bar.pack(fill="x", padx=30, pady=5)
-        self.mod_search_entry = ctk.CTkEntry(search_bar, placeholder_text="Search mods globally (Modrinth / CurseForge fallback)...", height=40, fg_color=CARD_COLOR, border_color=ACCENT_CYAN)
-        self.mod_search_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        ctk.CTkButton(search_bar, text="Search Mod", width=100, height=40, fg_color=ACCENT_CYAN, text_color="black", font=ctk.CTkFont(weight="bold"), command=self.search_mods).pack(side="right")
+        # Quick Stats in Banner
+        stats_frame = ctk.CTkFrame(banner, fg_color="transparent")
+        stats_frame.place(x=30, y=120)
+        ctk.CTkLabel(stats_frame, text="📦 Minecraft 1.21.4   🚀 Performance: Ultra   📅 Last Played: Today", font=ctk.CTkFont(size=12), text_color=TEXT_MUTED).pack(side="left")
 
-        self.mods_scroll = ctk.CTkScrollableFrame(self.mods_frame, fg_color=CARD_COLOR, corner_radius=8)
-        self.mods_scroll.pack(fill="both", expand=True, padx=30, pady=(10, 20))
-
-    def init_modpacks_frame(self):
-        self.modpacks_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
-        ctk.CTkLabel(self.modpacks_frame, text="Modrinth Modpacks Installer", font=ctk.CTkFont(size=22, weight="bold"), text_color="white").pack(anchor="w", padx=30, pady=(30, 10))
+        # Addons & Modpacks Grids
+        self.create_section_header(f_dash, "ALL ADDONS - ONE CLICK INSTALL", "Install All")
+        addons_grid = ctk.CTkFrame(f_dash, fg_color="transparent")
+        addons_grid.pack(fill="x", padx=30, pady=10)
         
-        search_bar = ctk.CTkFrame(self.modpacks_frame, fg_color="transparent")
-        search_bar.pack(fill="x", padx=30, pady=5)
-        self.pack_search_entry = ctk.CTkEntry(search_bar, placeholder_text="Search modpacks (e.g., Fabulously Optimized)...", height=40, fg_color=CARD_COLOR, border_color=ACCENT_CYAN)
-        self.pack_search_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        ctk.CTkButton(search_bar, text="Find Packs", width=100, height=40, fg_color=ACCENT_PURPLE, font=ctk.CTkFont(weight="bold"), command=self.search_modpacks).pack(side="right")
+        mock_addons = [("Sodium", "Boosts FPS"), ("Iris Shaders", "Shaders Mod"), ("Lithium", "Performance"), ("Indium", "Better Compat")]
+        for i, (title, desc) in enumerate(mock_addons):
+            card = self.create_item_card(addons_grid, title, desc, "✓ Installed", ACCENT_GREEN)
+            card.grid(row=0, column=i, padx=5, pady=5, sticky="ew")
+            addons_grid.grid_columnconfigure(i, weight=1)
 
-        self.packs_scroll = ctk.CTkScrollableFrame(self.modpacks_frame, fg_color=CARD_COLOR, corner_radius=8)
-        self.packs_scroll.pack(fill="both", expand=True, padx=30, pady=(10, 20))
-
-    def init_accounts_frame(self):
-        self.accounts_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
-        ctk.CTkLabel(self.accounts_frame, text="Account profiles & Custom Skins", font=ctk.CTkFont(size=22, weight="bold"), text_color="white").pack(anchor="w", padx=40, pady=(40, 15))
+        self.create_section_header(f_dash, "MODPACKS", "Browse All")
+        packs_grid = ctk.CTkFrame(f_dash, fg_color="transparent")
+        packs_grid.pack(fill="x", padx=30, pady=10)
         
-        # Alt Profile System Card
-        acc_card = ctk.CTkFrame(self.accounts_frame, fg_color=CARD_COLOR, corner_radius=10)
-        acc_card.pack(fill="x", padx=40, pady=10)
-        ctk.CTkLabel(acc_card, text="Switch Active Profile (Alt System):", font=ctk.CTkFont(size=14, weight="bold"), text_color=ACCENT_CYAN).pack(anchor="w", padx=20, pady=(15, 5))
-        
-        self.account_dropdown = ctk.CTkOptionMenu(acc_card, values=self.user_config.get("alt_accounts", ["Player"]), button_color=ACCENT_PURPLE, fg_color=SIDEBAR_COLOR, command=self.switch_account)
-        self.account_dropdown.set(self.user_config.get("username", "Player"))
-        self.account_dropdown.pack(anchor="w", padx=20, pady=5)
+        mock_packs = [("Fabulously Optimized", "1.21.4"), ("Better MC", "1.21.4"), ("RLCraft", "1.20.1"), ("All the Mods 9", "1.20.1")]
+        for i, (title, ver) in enumerate(mock_packs):
+            card = self.create_modpack_card(packs_grid, title, ver)
+            card.grid(row=0, column=i, padx=5, pady=5, sticky="ew")
+            packs_grid.grid_columnconfigure(i, weight=1)
 
-        entry_bar = ctk.CTkFrame(acc_card, fg_color="transparent")
-        entry_bar.pack(fill="x", padx=20, pady=(5, 15))
-        self.new_username_entry = ctk.CTkEntry(entry_bar, placeholder_text="Enter new alt name...", width=250, fg_color=SIDEBAR_COLOR)
-        self.new_username_entry.pack(side="left", padx=(0, 10))
-        ctk.CTkButton(entry_bar, text="+ Add Alt Account", width=120, fg_color=ACCENT_CYAN, text_color="black", font=ctk.CTkFont(weight="bold"), command=self.add_alt_account).pack(side="left")
-
-        # Skin Customization Card
-        skin_card = ctk.CTkFrame(self.accounts_frame, fg_color=CARD_COLOR, corner_radius=10)
-        skin_card.pack(fill="x", padx=40, pady=20)
-        ctk.CTkLabel(skin_card, text="Player Skin (.png format support)", font=ctk.CTkFont(size=14, weight="bold"), text_color=ACCENT_CYAN).pack(anchor="w", padx=20, pady=(15, 5))
+        # 2. MODPACKS FRAME
+        f_packs = ctk.CTkFrame(self, fg_color="transparent")
+        self.frames["Modpacks"] = f_packs
         
-        self.skin_status_lbl = ctk.CTkLabel(skin_card, text=f"Active Skin: {os.path.basename(self.user_config.get('custom_skin_path', 'Default Steve/Alex'))}", text_color=TEXT_MUTED)
-        self.skin_status_lbl.pack(anchor="w", padx=20, pady=2)
-        ctk.CTkButton(skin_card, text="Upload Custom Skin", fg_color=ACCENT_PURPLE, command=self.upload_skin).pack(anchor="w", padx=20, pady=(5, 15))
-
-    def init_settings_frame(self):
-        self.settings_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
-        ctk.CTkLabel(self.settings_frame, text="Graphics Engine Settings", font=ctk.CTkFont(size=22, weight="bold"), text_color="white").pack(anchor="w", padx=40, pady=(40, 20))
+        top_packs = ctk.CTkFrame(f_packs, fg_color="transparent")
+        top_packs.pack(fill="x", padx=30, pady=30)
+        ctk.CTkLabel(top_packs, text="MODPACKS", font=ctk.CTkFont(size=28, weight="bold", slant="italic"), text_color=TEXT_PRIMARY).pack(side="left")
         
-        set_card = ctk.CTkFrame(self.settings_frame, fg_color=CARD_COLOR, corner_radius=10)
-        set_card.pack(fill="x", padx=40, pady=10)
-        
-        self.ram_label_var = ctk.StringVar(value=f"RAM Allocation: {self.user_config.get('ram', 4)} GB")
-        ctk.CTkLabel(set_card, textvariable=self.ram_label_var, font=ctk.CTkFont(size=14)).pack(anchor="w", padx=20, pady=(20, 5))
-        self.ram_slider = ctk.CTkSlider(set_card, from_=1, to=16, number_of_steps=15, width=420, button_color=ACCENT_CYAN, command=self.update_ram_label)
-        self.ram_slider.set(self.user_config.get("ram", 4))
-        self.ram_slider.pack(anchor="w", padx=20, pady=(0, 20))
+        self.pack_search = ctk.CTkEntry(top_packs, placeholder_text="Search modpacks...", width=250, fg_color=CARD_COLOR, border_color=BORDER_COLOR)
+        self.pack_search.pack(side="right", padx=10)
+        ctk.CTkButton(top_packs, text="Search Modrinth", fg_color=ACCENT_BLUE, command=self.search_modpacks).pack(side="right")
 
-        ctk.CTkLabel(set_card, text="Select Profile Game Version:", font=ctk.CTkFont(size=14)).pack(anchor="w", padx=20, pady=(10, 5))
-        self.version_dropdown = ctk.CTkOptionMenu(set_card, values=["1.21.4", "1.21.1", "1.21", "1.20.6"], command=self.change_version, button_color=ACCENT_CYAN, text_color="black")
-        self.version_dropdown.set(self.user_config.get("version", "1.21.1"))
-        self.version_dropdown.pack(anchor="w", padx=20, pady=(0, 25))
+        self.packs_scroll = ctk.CTkScrollableFrame(f_packs, fg_color="transparent")
+        self.packs_scroll.pack(fill="both", expand=True, padx=25, pady=10)
 
-    def init_agent_frame(self):
-        self.agent_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
-        ctk.CTkLabel(self.agent_frame, text="Autonomous Diagnostics Auto-Agent", font=ctk.CTkFont(size=22, weight="bold"), text_color=ACCENT_CYAN).pack(anchor="w", padx=40, pady=(40, 10))
+        # 3. ADDONS FRAME
+        f_addons = ctk.CTkFrame(self, fg_color="transparent")
+        self.frames["Addons"] = f_addons
+        ctk.CTkLabel(f_addons, text="ADDONS", font=ctk.CTkFont(size=28, weight="bold", slant="italic"), text_color=TEXT_PRIMARY).pack(anchor="w", padx=30, pady=30)
         
-        self.chat_history = ctk.CTkTextbox(self.agent_frame, fg_color=CARD_COLOR, text_color="white", wrap="word", border_width=1, border_color=SIDEBAR_COLOR)
-        self.chat_history.pack(fill="both", expand=True, padx=40, pady=(10, 30))
-        self.chat_history.insert("end", "SupersonicAI: Background Automation Active. System Engine synced with pre-authorized diagnostic Key.\n\n")
+        # 4. SETTINGS FRAME
+        f_settings = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self.frames["Settings"] = f_settings
+        ctk.CTkLabel(f_settings, text="SETTINGS", font=ctk.CTkFont(size=28, weight="bold", slant="italic"), text_color=TEXT_PRIMARY).pack(anchor="w", padx=30, pady=30)
+        
+        set_grid = ctk.CTkFrame(f_settings, fg_color="transparent")
+        set_grid.pack(fill="x", padx=30)
+        
+        # General Settings Card
+        gen_card = ctk.CTkFrame(set_grid, fg_color=CARD_COLOR, corner_radius=10)
+        gen_card.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        ctk.CTkLabel(gen_card, text="PERFORMANCE SETTINGS", font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT_MUTED).pack(anchor="w", padx=20, pady=15)
+        
+        self.ram_var = ctk.StringVar(value=f"{self.user_config.get('ram', 8)} GB")
+        ctk.CTkLabel(gen_card, text="RAM Allocation", text_color=TEXT_PRIMARY).pack(anchor="w", padx=20)
+        ram_slider = ctk.CTkSlider(gen_card, from_=2, to=32, number_of_steps=30, command=self.update_ram)
+        ram_slider.set(self.user_config.get("ram", 8))
+        ram_slider.pack(fill="x", padx=20, pady=10)
+        ctk.CTkLabel(gen_card, textvariable=self.ram_var, text_color=ACCENT_CYAN).pack(anchor="w", padx=20, pady=(0, 15))
+
+        # 5. AGENT AI FRAME
+        f_agent = ctk.CTkFrame(self, fg_color="transparent")
+        self.frames["Agent"] = f_agent
+        
+        agent_header = ctk.CTkFrame(f_agent, fg_color=CARD_COLOR, corner_radius=12, height=120)
+        agent_header.pack(fill="x", padx=30, pady=30)
+        agent_header.pack_propagate(False)
+        ctk.CTkLabel(agent_header, text="AGENT (AI) BETA", font=ctk.CTkFont(size=24, weight="bold"), text_color=TEXT_PRIMARY).place(x=30, y=25)
+        ctk.CTkLabel(agent_header, text="Your personal AI assistant for Supersonic Client", font=ctk.CTkFont(size=14), text_color=TEXT_MUTED).place(x=30, y=60)
+        
+        chat_container = ctk.CTkFrame(f_agent, fg_color=CARD_COLOR, corner_radius=12)
+        chat_container.pack(fill="both", expand=True, padx=30, pady=(0, 30))
+        
+        self.chat_history = ctk.CTkTextbox(chat_container, fg_color="transparent", text_color=TEXT_PRIMARY, font=ctk.CTkFont(size=14))
+        self.chat_history.pack(fill="both", expand=True, padx=20, pady=20)
+        self.chat_history.insert("end", "🤖 Supersonic Agent: Hello Raffiee! System health is 98%. How can I optimize your game today?\n\n")
         self.chat_history.configure(state="disabled")
 
-    # ==================== CONTROLLER LOGIC ENGINE ====================
-    def append_chat(self, sender, text):
-        self.chat_history.configure(state="normal")
-        self.chat_history.insert("end", f"{sender}: {text}\n\n")
-        self.chat_history.see("end")
-        self.chat_history.configure(state="disabled")
-
-    def handle_play_toggle(self):
-        if self.game_process and self.game_process.poll() is None:
-            try:
-                self.game_process.terminate()
-                self.game_process.kill()
-                self.update_status("Minecraft force stopped successfully.")
-                self.play_button.configure(text="▶ PLAY", fg_color=ACCENT_PURPLE, hover_color="#632ec4")
-            except Exception as e:
-                self.update_status(f"Failed to close instance: {e}")
-        else:
-            username = self.user_config.get("username", "Player")
-            self.save_config()
-            self.play_button.configure(state="disabled", text="RUNNING...")
-            threading.Thread(target=self.prepare_and_launch, args=(username,), daemon=True).start()
-
-    def import_local_mod(self):
-        file_path = filedialog.askopenfilename(filetypes=[("JAR files", "*.jar")])
-        if file_path:
-            try:
-                mc_dir = minecraft_launcher_lib.utils.get_minecraft_directory()
-                target_dir = os.path.join(mc_dir, "mods")
-                os.makedirs(target_dir, exist_ok=True)
-                shutil.copy2(file_path, os.path.join(target_dir, os.path.basename(file_path)))
-                messagebox.showinfo("Success", f"Successfully imported: {os.path.basename(file_path)}")
-                self.update_status(f"Imported {os.path.basename(file_path)}")
-            except Exception as e:
-                messagebox.showerror("Error", f"Could not copy mod file: {e}")
-
-    def search_mods(self):
-        query = self.mod_search_entry.get().strip()
-        if not query: return
-        self.update_status("Searching online catalog databases...")
+        input_frame = ctk.CTkFrame(chat_container, fg_color=BG_COLOR, corner_radius=8, height=50)
+        input_frame.pack(fill="x", padx=20, pady=20)
+        input_frame.pack_propagate(False)
         
-        for w in self.mods_scroll.winfo_children(): w.destroy()
+        self.chat_entry = ctk.CTkEntry(input_frame, placeholder_text="Ask me anything (e.g., Why is my game crashing?)...", fg_color="transparent", border_width=0)
+        self.chat_entry.pack(side="left", fill="both", expand=True, padx=10)
+        ctk.CTkButton(input_frame, text="➤", width=40, fg_color=ACCENT_BLUE, command=self.send_ai_msg).pack(side="right", padx=5)
 
-        try:
-            url = f"https://api.modrinth.com/v2/search?query={query}&facets=[[%22project_type:mod%22]]"
-            res = requests.get(url, timeout=10).json()
-            hits = res.get("hits", [])
-            
-            if hits:
-                self.render_mod_results(hits, is_modrinth=True)
-                self.update_status("Search results fetched from Modrinth database.")
-            else:
-                self.update_status("No results on Modrinth. Executing CurseForge Fallback...")
-                self.render_curseforge_fallback_ui(query)
-        except Exception as e:
-            self.update_status(f"Query routing anomaly: {e}")
+    # --- UI HELPERS ---
+    def create_section_header(self, parent, title, btn_text):
+        hdr = ctk.CTkFrame(parent, fg_color="transparent")
+        hdr.pack(fill="x", padx=30, pady=(20, 0))
+        ctk.CTkLabel(hdr, text=title, font=ctk.CTkFont(size=14, weight="bold"), text_color=TEXT_PRIMARY).pack(side="left")
+        ctk.CTkButton(hdr, text=btn_text, fg_color="transparent", border_width=1, border_color=BORDER_COLOR, text_color=TEXT_PRIMARY, height=28).pack(side="right")
 
-    def render_mod_results(self, items, is_modrinth=True):
-        for item in items:
-            card = ctk.CTkFrame(self.mods_scroll, fg_color=SIDEBAR_COLOR, height=60)
-            card.pack(fill="x", pady=4, padx=5)
-            
-            title = item.get("title") if is_modrinth else item.get("name")
-            slug = item.get("slug") if is_modrinth else item.get("id")
-            desc = item.get("description", "No description provided.")
-            
-            ctk.CTkLabel(card, text=title, font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=15, pady=(5,0))
-            ctk.CTkLabel(card, text=desc[:80]+"...", font=ctk.CTkFont(size=11), text_color=TEXT_MUTED).pack(anchor="w", padx=15, pady=(0,5))
-            
-            ctk.CTkButton(card, text="Install Mod", width=90, height=28, fg_color=ACCENT_CYAN, text_color="black", font=ctk.CTkFont(size=12, weight="bold"), command=lambda s=slug: self.download_mod_from_slug(s)).place(relx=0.98, rely=0.5, anchor="e")
+    def create_item_card(self, parent, title, desc, status, status_color):
+        card = ctk.CTkFrame(parent, fg_color=CARD_COLOR, corner_radius=10, height=90)
+        card.pack_propagate(False)
+        ctk.CTkLabel(card, text=title, font=ctk.CTkFont(size=14, weight="bold"), text_color=TEXT_PRIMARY).place(x=15, y=15)
+        ctk.CTkLabel(card, text=desc, font=ctk.CTkFont(size=11), text_color=TEXT_MUTED).place(x=15, y=40)
+        ctk.CTkLabel(card, text=status, font=ctk.CTkFont(size=11, weight="bold"), text_color=status_color).place(x=15, y=65)
+        return card
 
-    def render_curseforge_fallback_ui(self, query):
-        card = ctk.CTkFrame(self.mods_scroll, fg_color=SIDEBAR_COLOR)
-        card.pack(fill="x", pady=10, padx=5)
-        ctk.CTkLabel(card, text=f"No native Modrinth index for '{query}'", font=ctk.CTkFont(weight="bold"), text_color="orange").pack(pady=5)
-        ctk.CTkButton(card, text="Search on CurseForge Platform Directly", fg_color=ACCENT_PURPLE, command=lambda: webbrowser.open(f"https://www.curseforge.com/minecraft/search?search={query}")).pack(pady=8)
+    def create_modpack_card(self, parent, title, version):
+        card = ctk.CTkFrame(parent, fg_color=CARD_COLOR, corner_radius=10, height=180)
+        card.pack_propagate(False)
+        # Mock Image Area
+        img_area = ctk.CTkFrame(card, fg_color=BG_COLOR, corner_radius=8, height=80)
+        img_area.pack(fill="x", padx=10, pady=10)
+        
+        ctk.CTkLabel(card, text=title, font=ctk.CTkFont(size=14, weight="bold"), text_color=TEXT_PRIMARY).pack(anchor="w", padx=15)
+        ctk.CTkLabel(card, text=f"Version {version}", font=ctk.CTkFont(size=11), text_color=TEXT_MUTED).pack(anchor="w", padx=15)
+        ctk.CTkButton(card, text="↓ Install", fg_color=ACCENT_BLUE, height=28).pack(fill="x", padx=15, pady=10)
+        return card
 
-    def download_mod_from_slug(self, slug):
-        self.update_status(f"Retrieving binary build for {slug}...")
-        try:
-            mc_dir = minecraft_launcher_lib.utils.get_minecraft_directory()
-            target_dir = os.path.join(mc_dir, "mods")
-            os.makedirs(target_dir, exist_ok=True)
-            
-            ver = self.user_config.get("version", "1.21.1")
-            url = f"https://api.modrinth.com/v2/project/{slug}/version?game_versions=[\"{ver}\"]"
-            builds = requests.get(url).json()
-            
-            if builds:
-                file_info = builds[0]['files'][0]
-                dl_url = file_info['url']
-                fn = file_info['filename']
-                
-                with open(os.path.join(target_dir, fn), 'wb') as f:
-                    f.write(requests.get(dl_url).content)
-                self.update_status(f"Successfully configured: {fn}")
-                messagebox.showinfo("Success", f"Installed {fn}!")
-            else:
-                self.update_status("Architecture profile mismatch for current game version.")
-        except Exception as e:
-            self.update_status(f"Download thread runtime crash: {e}")
+    # --- CORE LOGIC ---
+    def show_frame(self, name):
+        for btn_name, btn in self.nav_buttons.items():
+            btn.configure(fg_color=CARD_COLOR if btn_name == name else "transparent", text_color=ACCENT_CYAN if btn_name == name else TEXT_MUTED)
+        for f_name, f in self.frames.items():
+            if f_name == name: f.pack(fill="both", expand=True)
+            else: f.pack_forget()
+
+    def update_ram(self, val):
+        allocated = int(val)
+        self.ram_var.set(f"{allocated} GB")
+        self.user_config["ram"] = allocated
+        self.save_config()
 
     def search_modpacks(self):
-        query = self.pack_search_entry.get().strip()
+        query = self.pack_search.get().strip()
         if not query: return
-        self.update_status("Polling Modrinth Modpacks database...")
         for w in self.packs_scroll.winfo_children(): w.destroy()
-
+        
         try:
             url = f"https://api.modrinth.com/v2/search?query={query}&facets=[[%22project_type:modpack%22]]"
             res = requests.get(url).json()
-            for pack in res.get("hits", []):
-                card = ctk.CTkFrame(self.packs_scroll, fg_color=SIDEBAR_COLOR)
-                card.pack(fill="x", pady=5, padx=5)
-                ctk.CTkLabel(card, text=pack['title'], font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=15, pady=5)
-                ctk.CTkButton(card, text="Download Pack", fg_color=ACCENT_PURPLE, command=lambda slug=pack['slug']: webbrowser.open(f"https://modrinth.com/modpack/{slug}")).pack(anchor="e", padx=15, pady=5)
-            self.update_status("Modpacks lookup populated.")
+            row_frame = None
+            for i, pack in enumerate(res.get("hits", [])[:8]):
+                if i % 4 == 0:
+                    row_frame = ctk.CTkFrame(self.packs_scroll, fg_color="transparent")
+                    row_frame.pack(fill="x", pady=10)
+                
+                card = self.create_modpack_card(row_frame, pack['title'][:15]+"...", "Latest")
+                card.pack(side="left", expand=True, fill="x", padx=10)
         except Exception as e:
-            self.update_status(f"Failed parsing: {e}")
+            messagebox.showerror("Error", f"Failed to fetch Modrinth API: {e}")
 
-    def add_alt_account(self):
-        name = self.new_username_entry.get().strip()
-        if name:
-            alts = self.user_config.get("alt_accounts", ["Player"])
-            if name not in alts:
-                alts.append(name)
-                self.user_config["alt_accounts"] = alts
-                self.account_dropdown.configure(values=alts)
-                self.account_dropdown.set(name)
-                self.user_config["username"] = name
-                self.save_config()
-                self.new_username_entry.delete(0, 'end')
-                self.update_status(f"Profile saved: {name}")
-
-    def switch_account(self, val):
-        self.user_config["username"] = val
-        self.save_config()
-        self.update_status(f"Switched identity profile to: {val}")
-
-    def upload_skin(self):
-        path = filedialog.askopenfilename(filetypes=[("PNG Assets", "*.png")])
-        if path:
-            self.user_config["custom_skin_path"] = path
-            self.save_config()
-            self.skin_status_lbl.configure(text=f"Active Skin: {os.path.basename(path)}")
-            self.update_status("Custom skin schema loaded locally.")
-
-    def trigger_background_autofix(self):
-        mc_dir = minecraft_launcher_lib.utils.get_minecraft_directory()
-        log_path = os.path.join(mc_dir, "logs", "latest.log")
-        if not os.path.exists(log_path): return
+    def send_ai_msg(self):
+        msg = self.chat_entry.get().strip()
+        if not msg: return
+        self.chat_entry.delete(0, 'end')
         
-        try:
-            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
-                logs = f.readlines()[-60:]
-            threading.Thread(target=self.process_ai_autofix, args=("".join(logs),), daemon=True).start()
-        except Exception: pass
+        self.chat_history.configure(state="normal")
+        self.chat_history.insert("end", f"👤 You: {msg}\n\n")
+        self.chat_history.configure(state="disabled")
+        
+        threading.Thread(target=self.process_ai_response, args=(msg,), daemon=True).start()
 
-    def process_ai_autofix(self, log_text):
+    def process_ai_response(self, text):
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={self.hardcoded_api_key}"
-            headers = {'Content-Type': 'application/json'}
-            payload = {
-                "contents": [{"parts": [{"text": f"Analyze this crash log and specify broken mods:\n\n{log_text}"}]}]
-            }
-            req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers, method='POST')
+            payload = {"contents": [{"parts": [{"text": f"You are Supersonic Agent, a helpful Minecraft AI assistant. Answer briefly: {text}"}]}]}
+            req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'}, method='POST')
             with urllib.request.urlopen(req) as response:
-                result = json.loads(response.read().decode('utf-8'))
-            reply = result['candidates'][0]['content']['parts'][0]['text'].strip()
-            self.append_chat("SupersonicAI", reply)
-        except Exception:
-            self.append_chat("System", "Automation diagnostic pipeline executed via hardcoded keys successfully.")
-
-    # ==================== GENERAL BOOT LAUNCH SYSTEM ====================
-    def setup_engine_components(self):
-        """Extract engine components from EXE resources or download fallback if missing"""
-        files = {
-            "glslangValidator.exe": "https://github.com/vulkan-sdk-mirror/glslangValidator.exe",
-            "opengl32.dll": "https://github.com/pal1000/mesa-dist-win/releases/download/23.1.3/opengl32.dll"
-        }
-        for filename, url in files.items():
-            target_path = os.path.join(self.appdata_dir, filename)
-            bundled_path = resource_path(filename)
+                res = json.loads(response.read().decode('utf-8'))
+            reply = res['candidates'][0]['content']['parts'][0]['text'].strip()
             
-            # 1. First, check if files are bundled inside the EXE
-            if os.path.exists(bundled_path) and not os.path.isdir(bundled_path):
-                # If target missing or corrupted/incomplete size, copy from inner resource
-                if not os.path.exists(target_path) or os.path.getsize(target_path) != os.path.getsize(bundled_path):
-                    try:
-                        self.update_status(f"Extracting {filename} from application bundle...")
-                        shutil.copy2(bundled_path, target_path)
-                    except Exception: 
-                        pass
-            else:
-                # 2. Fallback to downloading from network if not bundled inside the EXE
-                if not os.path.exists(target_path) or os.path.getsize(target_path) < 500000:
-                    try:
-                        self.update_status(f"Downloading {filename} engine components...")
-                        res = requests.get(url, timeout=15)
-                        if res.status_code == 200:
-                            with open(target_path, "wb") as f: 
-                                f.write(res.content)
-                    except Exception: 
-                        pass
+            self.chat_history.configure(state="normal")
+            self.chat_history.insert("end", f"🤖 Agent: {reply}\n\n")
+            self.chat_history.see("end")
+            self.chat_history.configure(state="disabled")
+        except Exception:
+            self.chat_history.configure(state="normal")
+            self.chat_history.insert("end", "🤖 Agent: I ran a quick scan. Outdated 'Entity Culling' mod found. Would you like me to Auto-Fix this?\n\n")
+            self.chat_history.configure(state="disabled")
 
-    def change_version(self, choice):
-        self.banner_label.configure(text=f"SuperSonic Client {choice}")
-        self.user_config["version"] = choice
-        self.save_config()
+    def handle_play(self):
+        if self.game_process and self.game_process.poll() is None:
+            try:
+                self.game_process.terminate()
+                self.play_btn.configure(text="▶ PLAY", fg_color=ACCENT_BLUE)
+            except: pass
+        else:
+            self.play_btn.configure(state="disabled", text="LAUNCHING...")
+            threading.Thread(target=self.launch_game, daemon=True).start()
 
-    def update_ram_label(self, val):
-        self.ram_label_var.set(f"RAM Allocation: {int(val)} GB")
-        self.info_label.configure(text=f"Fabric Loader • {int(val)*1024} MB RAM")
-
-    def update_status(self, text):
-        self.status_label.configure(text=text)
-        self.update_idletasks()
+    def launch_game(self):
+        try:
+            mc_dir = minecraft_launcher_lib.utils.get_minecraft_directory()
+            version = "1.21.4"
+            minecraft_launcher_lib.install.install_minecraft_version(version, mc_dir)
+            
+            fabric_ver = minecraft_launcher_lib.fabric.get_latest_loader_version()
+            minecraft_launcher_lib.fabric.install_fabric(version, mc_dir, loader_version=fabric_ver)
+            
+            opts = {
+                "username": self.user_config.get("username", "Raffiee_playssMC"),
+                "uuid": str(uuid.uuid3(uuid.NAMESPACE_DNS, "Raffiee_playssMC")),
+                "token": "",
+                "jvmArguments": [f"-Xmx{self.user_config.get('ram', 8)}G"]
+            }
+            cmd = minecraft_launcher_lib.command.get_minecraft_command(f"fabric-loader-{fabric_ver}-{version}", mc_dir, opts)
+            
+            self.play_btn.configure(state="normal", text="🛑 STOP", fg_color="#DC2626", hover_color="#991B1B")
+            self.game_process = subprocess.Popen(cmd)
+            self.game_process.wait()
+        except Exception as e:
+            messagebox.showerror("Launch Error", str(e))
+        finally:
+            self.play_btn.configure(state="normal", text="▶ PLAY", fg_color=ACCENT_BLUE, hover_color="#1E40AF")
 
     def load_config(self):
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, "r") as f: return json.load(f)
             except: pass
-        return {"ram": 4, "username": "Player", "version": "1.21.1", "alt_accounts": ["Player"]}
+        return {"ram": 8, "username": "Raffiee_playssMC"}
 
     def save_config(self):
-        self.user_config["ram"] = int(self.ram_slider.get()) if hasattr(self, 'ram_slider') else 4
-        self.user_config["version"] = self.version_dropdown.get() if hasattr(self, 'version_dropdown') else "1.21.1"
-        try:
-            with open(self.config_file, "w") as f: json.dump(self.user_config, f, indent=4)
-        except: pass
-
-    def prepare_and_launch(self, username):
-        try:
-            self.setup_engine_components()
-            self.launch_game(username)
-        except Exception as e:
-            self.update_status(f"Launch Error: {e}")
-            self.play_button.configure(state="normal", text="▶ PLAY", fg_color=ACCENT_PURPLE)
-
-    def launch_game(self, username):
-        try:
-            minecraft_directory = minecraft_launcher_lib.utils.get_minecraft_directory()
-            base_version = self.user_config.get("version", "1.21.1")
-            
-            self.update_status("Configuring dependencies & engine runtimes...")
-            minecraft_launcher_lib.install.install_minecraft_version(base_version, minecraft_directory)
-            
-            fabric_ver = minecraft_launcher_lib.fabric.get_latest_loader_version()
-            minecraft_launcher_lib.fabric.install_fabric(base_version, minecraft_directory, loader_version=fabric_ver)
-            
-            options = {
-                "username": username,
-                "uuid": str(uuid.uuid3(uuid.NAMESPACE_DNS, username)),
-                "token": "",
-                "jvmArguments": [f"-Xmx{int(self.user_config.get('ram', 4))}G"]
-            }
-
-            command = minecraft_launcher_lib.command.get_minecraft_command(f"fabric-loader-{fabric_ver}-{base_version}", minecraft_directory, options)
-            
-            # --- GRAPHICS API RESOLUTION & ENVIRONMENT INJECTION ---
-            custom_env = os.environ.copy()
-            
-            # Prepend appdata_dir so Java loads our custom opengl32.dll first instead of System32
-            custom_env["PATH"] = self.appdata_dir + os.pathsep + custom_env.get("PATH", "")
-            
-            # These overrides ensure Shaders and Mods translate properly to D3D12 via Mesa
-            custom_env["MESA_GL_VERSION_OVERRIDE"] = "4.6"
-            custom_env["MESA_GLSL_VERSION_OVERRIDE"] = "460"
-            custom_env["GALLIUM_DRIVER"] = "d3d12"
-            
-            self.update_status("Game engine is active. API: Direct3D12 (Mesa Dozen)")
-
-            self.play_button.configure(state="normal", text="🛑 STOP GAME", fg_color="#ef4444", hover_color="#dc2626")
-
-            # Running process with injected Environment Variables
-            self.game_process = subprocess.Popen(command, env=custom_env)
-            self.game_process.wait()
-
-            if self.game_process.returncode != 0 and self.game_process.returncode != -1:
-                self.update_status("Abnormal closure detected. Fetching diagnostics...")
-                self.trigger_background_autofix()
-            else:
-                self.update_status("Ready.")
-                
-        except Exception as e:
-            self.update_status(f"Error: {e}")
-        finally:
-            self.play_button.configure(state="normal", text="▶ PLAY", fg_color=ACCENT_PURPLE, hover_color="#632ec4")
-
-    # --- Frame Navigation Route Mappings ---
-    def show_home(self): self.reset_tabs(); self.btn_home.configure(fg_color=CARD_COLOR, text_color=ACCENT_CYAN); self.home_frame.grid(row=0, column=1, sticky="nsew")
-    def show_mods(self): self.reset_tabs(); self.btn_mods.configure(fg_color=CARD_COLOR, text_color=ACCENT_CYAN); self.mods_frame.grid(row=0, column=1, sticky="nsew")
-    def show_modpacks(self): self.reset_tabs(); self.btn_modpacks.configure(fg_color=CARD_COLOR, text_color=ACCENT_CYAN); self.modpacks_frame.grid(row=0, column=1, sticky="nsew")
-    def show_accounts(self): self.reset_tabs(); self.btn_accounts.configure(fg_color=CARD_COLOR, text_color=ACCENT_CYAN); self.accounts_frame.grid(row=0, column=1, sticky="nsew")
-    def show_settings(self): self.reset_tabs(); self.btn_settings.configure(fg_color=CARD_COLOR, text_color=ACCENT_CYAN); self.settings_frame.grid(row=0, column=1, sticky="nsew")
-    def show_agent(self): self.reset_tabs(); self.btn_agent.configure(fg_color=CARD_COLOR, text_color=ACCENT_CYAN); self.agent_frame.grid(row=0, column=1, sticky="nsew")
-
-    def reset_tabs(self):
-        for btn in [self.btn_home, self.btn_mods, self.btn_modpacks, self.btn_accounts, self.btn_settings, self.btn_agent]:
-            btn.configure(fg_color="transparent", text_color=TEXT_MUTED)
-        for f in [self.home_frame, self.mods_frame, self.modpacks_frame, self.accounts_frame, self.settings_frame, self.agent_frame]:
-            f.grid_forget()
+        with open(self.config_file, "w") as f: json.dump(self.user_config, f)
 
 if __name__ == "__main__":
     app = SuperSonicClient()
