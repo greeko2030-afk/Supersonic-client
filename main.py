@@ -50,11 +50,10 @@ class SupersonicClientMaster(ctk.CTk):
         self.appdata_dir = os.path.join(os.getenv('APPDATA', os.path.expanduser('~')), 'SupersonicClient', 'bin')
         os.makedirs(self.appdata_dir, exist_ok=True)
 
-        # FIXED Grid Layout Configuration to prevent UI collapse
-        self.grid_rowconfigure(0, weight=0)  # Header: Fixed height
-        self.grid_rowconfigure(1, weight=1)  # Content Container: Expands to fill screen
-        self.grid_columnconfigure(0, weight=0) # Sidebar: Fixed width
-        self.grid_columnconfigure(1, weight=1) # Main area: Expands horizontally
+        self.grid_rowconfigure(0, weight=0)
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_columnconfigure(0, weight=0)
+        self.grid_columnconfigure(1, weight=1)
 
         self.setup_sidebar()
         self.setup_header()
@@ -191,7 +190,6 @@ class SupersonicClientMaster(ctk.CTk):
                 f.grid_forget()
 
     def log_message(self, message):
-        """Thread-safe real-time UI logging to Dashboard console"""
         if hasattr(self, 'logs_box') and self.logs_box.winfo_exists():
             self.after(0, lambda: self._add_log_line(message))
 
@@ -315,11 +313,9 @@ class SupersonicClientMaster(ctk.CTk):
 
         ctk.CTkLabel(right_panel, text="Recent System Actions", font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT_PRIMARY).pack(anchor="w", padx=20, pady=(15, 5))
         
-        # Self Reference for dynamically writing logs safely
         self.logs_box = ctk.CTkFrame(right_panel, fg_color=CARD_COLOR, corner_radius=8, border_width=1, border_color=BORDER_COLOR)
         self.logs_box.pack(fill="both", expand=True, padx=15, pady=(5, 15))
 
-        # Initial default system logs
         default_logs = [
             "[System] Java Path synced ✔",
             "[System] Corrupted cache cleared ✔",
@@ -785,7 +781,6 @@ class SupersonicClientMaster(ctk.CTk):
 
         self.log_message(f"[Launch] Starting game build {version}...")
 
-        # Installation callbacks to pipeline progress to live logs
         callbacks = {
             "setStatus": lambda status: self.log_message(f"[Install] {status}"),
             "setProgress": lambda progress: self.log_message(f"[Install] Downloading: {progress}%"),
@@ -793,15 +788,15 @@ class SupersonicClientMaster(ctk.CTk):
         }
 
         try:
-            if not minecraft_launcher_lib.utils.is_minecraft_installed(version, mc_dir):
+            # FIXED: Safely checking if the version is installed using get_installed_versions
+            installed_versions = [v['id'] for v in minecraft_launcher_lib.utils.get_installed_versions(mc_dir)]
+            if version not in installed_versions:
                 self.log_message("[Launch] Game core assets not found. Downloading...")
                 minecraft_launcher_lib.install.install_minecraft_version(version, mc_dir, callback=callbacks)
                 self.log_message("[Launch] Core installation complete!")
 
-            # Base JVM Arguments
             jvm_args = [f"-Xmx{ram_mb}M", f"-Xms{ram_mb}M", "-XX:+UnlockExperimentalVMOptions"]
 
-            # --- CORE ENGINE OPTIMIZATION INJECTIONS ---
             if self.user_config.get("opt_logic", True):
                 jvm_args.extend(["-XX:+UseG1GC", "-XX:G1NewSizePercent=20", "-XX:G1ReservePercent=20", "-XX:MaxGCPauseMillis=50", "-XX:G1HeapRegionSize=32M"])
             
@@ -821,7 +816,6 @@ class SupersonicClientMaster(ctk.CTk):
                 "jvmArguments": jvm_args
             }
 
-            # Attempt Auto-Java Execution Path Check
             java_path = minecraft_launcher_lib.utils.get_java_executable()
             if java_path:
                 options["executablePath"] = java_path
@@ -847,5 +841,5 @@ class SupersonicClientMaster(ctk.CTk):
             self.after(0, lambda: self.play_btn.configure(text="▶  PLAY", fg_color=ACCENT_BLUE))
 
 if __name__ == "__main__":
-    app = SupersonicClientMaster()
+    app = SupersonicClient()
     app.mainloop()
