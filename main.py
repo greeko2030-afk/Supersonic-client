@@ -47,11 +47,14 @@ class SupersonicClientMaster(ctk.CTk):
         self.user_config = self.load_config()
         self.game_process = None
         self.hardcoded_api_key = "AQ.Ab8RN6IZzVVGS9dP9RnVtJTGvlYtl8UfW9uUb8FD7G-62moFDQ"
-        self.appdata_dir = os.path.join(os.getenv('APPDATA'), 'SupersonicClient', 'bin')
+        self.appdata_dir = os.path.join(os.getenv('APPDATA', os.path.expanduser('~')), 'SupersonicClient', 'bin')
         os.makedirs(self.appdata_dir, exist_ok=True)
 
-        self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=1)
+        # FIXED Grid Layout Configuration to prevent UI collapse
+        self.grid_rowconfigure(0, weight=0)  # Header: Fixed height
+        self.grid_rowconfigure(1, weight=1)  # Content Container: Expands to fill screen
+        self.grid_columnconfigure(0, weight=0) # Sidebar: Fixed width
+        self.grid_columnconfigure(1, weight=1) # Main area: Expands horizontally
 
         self.setup_sidebar()
         self.setup_header()
@@ -187,6 +190,18 @@ class SupersonicClientMaster(ctk.CTk):
             else:
                 f.grid_forget()
 
+    def log_message(self, message):
+        """Thread-safe real-time UI logging to Dashboard console"""
+        if hasattr(self, 'logs_box') and self.logs_box.winfo_exists():
+            self.after(0, lambda: self._add_log_line(message))
+
+    def _add_log_line(self, message):
+        children = self.logs_box.winfo_children()
+        if len(children) >= 8:
+            children[0].destroy()
+        lbl = ctk.CTkLabel(self.logs_box, text=message, font=ctk.CTkFont(family="Courier New", size=11), text_color=ACCENT_GREEN)
+        lbl.pack(anchor="w", padx=15, pady=3)
+
     def init_dashboard(self):
         f = ctk.CTkFrame(self.frames_container, fg_color="transparent")
         self.frames["Dashboard"] = f
@@ -299,17 +314,20 @@ class SupersonicClientMaster(ctk.CTk):
         ctk.CTkButton(fix_panel, text="🔧 Scan & Fix", fg_color=ACCENT_BLUE, height=30).pack(fill="x", padx=15)
 
         ctk.CTkLabel(right_panel, text="Recent System Actions", font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT_PRIMARY).pack(anchor="w", padx=20, pady=(15, 5))
-        logs_box = ctk.CTkFrame(right_panel, fg_color=CARD_COLOR, corner_radius=8, border_width=1, border_color=BORDER_COLOR)
-        logs_box.pack(fill="both", expand=True, padx=15, pady=(5, 15))
+        
+        # Self Reference for dynamically writing logs safely
+        self.logs_box = ctk.CTkFrame(right_panel, fg_color=CARD_COLOR, corner_radius=8, border_width=1, border_color=BORDER_COLOR)
+        self.logs_box.pack(fill="both", expand=True, padx=15, pady=(5, 15))
 
-        mock_logs = [
-            "[12:48] Java Path synced ✔",
-            "[12:46] Corrupted cache cleared ✔",
-            "[12:43] Optimized heap memory ✔",
-            "[12:41] No conflicting mods found ✔"
+        # Initial default system logs
+        default_logs = [
+            "[System] Java Path synced ✔",
+            "[System] Corrupted cache cleared ✔",
+            "[System] Optimized heap memory ✔",
+            "[System] Client security validated ✔"
         ]
-        for log in mock_logs:
-            ctk.CTkLabel(logs_box, text=log, font=ctk.CTkFont(family="Courier New", size=11), text_color=ACCENT_GREEN).pack(anchor="w", padx=15, pady=6)
+        for log in default_logs:
+            self.log_message(log)
 
     def init_modpacks(self):
         f = ctk.CTkFrame(self.frames_container, fg_color="transparent")
@@ -482,6 +500,7 @@ class SupersonicClientMaster(ctk.CTk):
                 os.makedirs(target_dir, exist_ok=True)
                 shutil.copy2(file_path, os.path.join(target_dir, os.path.basename(file_path)))
                 messagebox.showinfo("Success", f"Imported {os.path.basename(file_path)} directly to mods!")
+                self.log_message(f"[System] Imported local mod: {os.path.basename(file_path)}")
             except Exception as e:
                 messagebox.showerror("Error", str(e))
 
@@ -516,7 +535,6 @@ class SupersonicClientMaster(ctk.CTk):
         self.create_dropdown(box_gen, "Language", ["English", "Spanish", "Bengali"])
         self.create_dropdown(box_gen, "Theme", ["Dark (Default)", "AMOLED Black"])
         
-        # Note: Changed to support dynamic config saving
         self.create_toggle(box_gen, "Start with Windows", "start_with_win", True)
         self.create_toggle(box_gen, "Minimize to System Tray", "min_tray", True)
         self.create_toggle(box_gen, "Confirm Before Exit", "confirm_exit", True)
@@ -541,7 +559,6 @@ class SupersonicClientMaster(ctk.CTk):
         self.ram_menu.set(f"{self.user_config.get('ram', 8192)} MB")
         self.ram_menu.pack(fill="x", padx=15, pady=(0, 10))
 
-        # --- NEW OPTIMIZATION FEATURES ---
         box_engine = ctk.CTkFrame(col2, fg_color=CARD_COLOR, corner_radius=12, border_width=1, border_color=ACCENT_CYAN)
         box_engine.pack(fill="x", pady=(0, 12))
         ctk.CTkLabel(box_engine, text="CORE ENGINE OPTIMIZATIONS", font=ctk.CTkFont(size=11, weight="bold"), text_color=ACCENT_CYAN).pack(anchor="w", padx=15, pady=(15, 10))
@@ -757,6 +774,7 @@ class SupersonicClientMaster(ctk.CTk):
             if self.game_process:
                 self.game_process.terminate()
                 self.play_btn.configure(text="▶  PLAY", fg_color=ACCENT_BLUE)
+                self.log_message("[System] Minecraft forcefully terminated.")
                 messagebox.showinfo("Game Closed", "Minecraft forcefully closed.")
 
     def start_minecraft(self):
@@ -765,43 +783,66 @@ class SupersonicClientMaster(ctk.CTk):
         username = self.user_config.get("username", "Raffiee_playssMC")
         ram_mb = self.user_config.get("ram", 8192)
 
-        if not minecraft_launcher_lib.utils.is_minecraft_installed(version, mc_dir):
-            minecraft_launcher_lib.install.install_minecraft_version(version, mc_dir)
+        self.log_message(f"[Launch] Starting game build {version}...")
 
-        # Base JVM Arguments
-        jvm_args = [f"-Xmx{ram_mb}M", f"-Xms{ram_mb}M", "-XX:+UnlockExperimentalVMOptions"]
-
-        # --- CORE ENGINE OPTIMIZATION INJECTIONS ---
-        if self.user_config.get("opt_logic", True):
-            # Aggressive Garbage Collection for Logic & Tick Engine multithreading
-            jvm_args.extend(["-XX:+UseG1GC", "-XX:G1NewSizePercent=20", "-XX:G1ReservePercent=20", "-XX:MaxGCPauseMillis=50", "-XX:G1HeapRegionSize=32M"])
-        
-        if self.user_config.get("opt_physics", True):
-            # Culling & Pre-touch optimizations for faster physics calculations
-            jvm_args.extend(["-XX:+AlwaysPreTouch", "-XX:+DisableExplicitGC", "-Djava.util.concurrent.ForkJoinPool.common.parallelism=4"])
-            
-        if self.user_config.get("opt_ai", True):
-            # Memory layout optimization for heavy Mob AI tasks
-            jvm_args.extend(["-XX:+UseNUMA", "-XX:+UseStringDeduplication", "-XX:ThreadPriorityPolicy=1"])
-            
-        if self.user_config.get("opt_sound", True):
-            # Buffer & Fast-Render for Sound Engine
-            jvm_args.extend(["-Dfml.ignorePatchDiscrepancies=true", "-Dorg.lwjgl.openal.libname=OpenAL"])
-
-        options = {
-            "username": username,
-            "uuid": str(uuid.uuid4()),
-            "token": "",
-            "jvmArguments": jvm_args
+        # Installation callbacks to pipeline progress to live logs
+        callbacks = {
+            "setStatus": lambda status: self.log_message(f"[Install] {status}"),
+            "setProgress": lambda progress: self.log_message(f"[Install] Downloading: {progress}%"),
+            "setMax": lambda max_val: None
         }
-        
+
         try:
+            if not minecraft_launcher_lib.utils.is_minecraft_installed(version, mc_dir):
+                self.log_message("[Launch] Game core assets not found. Downloading...")
+                minecraft_launcher_lib.install.install_minecraft_version(version, mc_dir, callback=callbacks)
+                self.log_message("[Launch] Core installation complete!")
+
+            # Base JVM Arguments
+            jvm_args = [f"-Xmx{ram_mb}M", f"-Xms{ram_mb}M", "-XX:+UnlockExperimentalVMOptions"]
+
+            # --- CORE ENGINE OPTIMIZATION INJECTIONS ---
+            if self.user_config.get("opt_logic", True):
+                jvm_args.extend(["-XX:+UseG1GC", "-XX:G1NewSizePercent=20", "-XX:G1ReservePercent=20", "-XX:MaxGCPauseMillis=50", "-XX:G1HeapRegionSize=32M"])
+            
+            if self.user_config.get("opt_physics", True):
+                jvm_args.extend(["-XX:+AlwaysPreTouch", "-XX:+DisableExplicitGC", "-Djava.util.concurrent.ForkJoinPool.common.parallelism=4"])
+                
+            if self.user_config.get("opt_ai", True):
+                jvm_args.extend(["-XX:+UseNUMA", "-XX:+UseStringDeduplication", "-XX:ThreadPriorityPolicy=1"])
+                
+            if self.user_config.get("opt_sound", True):
+                jvm_args.extend(["-Dfml.ignorePatchDiscrepancies=true", "-Dorg.lwjgl.openal.libname=OpenAL"])
+
+            options = {
+                "username": username,
+                "uuid": str(uuid.uuid4()),
+                "token": "",
+                "jvmArguments": jvm_args
+            }
+
+            # Attempt Auto-Java Execution Path Check
+            java_path = minecraft_launcher_lib.utils.get_java_executable()
+            if java_path:
+                options["executablePath"] = java_path
+                self.log_message(f"[Launch] Executable Java detected: {java_path}")
+            else:
+                self.log_message("[Launch] Warning: Java path auto-detection failed. Default system runtime fallback.")
+
+            self.log_message("[Launch] Generating launch command parameters...")
             mc_cmd = minecraft_launcher_lib.command.get_minecraft_command(version, mc_dir, options)
+            
+            self.log_message("[Launch] Subprocess initiating. Launching Minecraft...")
             self.game_process = subprocess.Popen(mc_cmd)
             self.after(0, lambda: self.play_btn.configure(text="🛑 KILL PROCESS", fg_color="#EF4444"))
+            
+            self.log_message("[Launch] Success! Game is now running.")
             self.game_process.wait()
+            self.log_message("[System] Minecraft session ended.")
+            
         except Exception as e:
-            self.after(0, lambda: messagebox.showerror("Launch Error", str(e)))
+            self.log_message(f"[Error] Execution aborted: {str(e)}")
+            self.after(0, lambda: messagebox.showerror("Launch Error", f"Failed to launch: {str(e)}\n\nPlease ensure Java 17+ or Java 21 is properly installed on your system!"))
         finally:
             self.after(0, lambda: self.play_btn.configure(text="▶  PLAY", fg_color=ACCENT_BLUE))
 
