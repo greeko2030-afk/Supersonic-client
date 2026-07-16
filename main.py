@@ -59,15 +59,29 @@ class SupersonicClientMaster(ctk.CTk):
         self.show_frame("Dashboard")
 
     def load_config(self):
+        default_cfg = {
+            "ram": 8192, 
+            "username": "Raffiee_playssMC", 
+            "version": "1.21.4", 
+            "alt_accounts": ["Raffiee_playssMC"],
+            "opt_physics": True,
+            "opt_logic": True,
+            "opt_sound": True,
+            "opt_ai": True
+        }
         if os.path.exists(self.config_file):
             try:
-                with open(self.config_file, "r") as f: return json.load(f)
+                with open(self.config_file, "r") as f: 
+                    loaded = json.load(f)
+                    default_cfg.update(loaded)
+                    return default_cfg
             except: pass
-        return {"ram": 8192, "username": "Raffiee_playssMC", "version": "1.21.4", "alt_accounts": ["Raffiee_playssMC"]}
+        return default_cfg
 
     def save_config(self):
         try:
-            with open(self.config_file, "w") as f: json.dump(self.user_config, f, indent=4)
+            with open(self.config_file, "w") as f: 
+                json.dump(self.user_config, f, indent=4)
         except: pass
 
     def setup_header(self):
@@ -75,7 +89,6 @@ class SupersonicClientMaster(ctk.CTk):
         self.header_frame.grid(row=0, column=1, sticky="ew")
         self.header_frame.pack_propagate(False)
         
-        # FIXED: Removed 'spacing=2' from CTkFont
         lbl = ctk.CTkLabel(self.header_frame, text="THE NEXT GENERATION MINECRAFT LAUNCHER", 
                              font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=ACCENT_CYAN)
         lbl.pack(pady=10)
@@ -502,16 +515,18 @@ class SupersonicClientMaster(ctk.CTk):
         ctk.CTkLabel(box_gen, text="GENERAL SETTINGS", font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_MUTED).pack(anchor="w", padx=15, pady=(15, 10))
         self.create_dropdown(box_gen, "Language", ["English", "Spanish", "Bengali"])
         self.create_dropdown(box_gen, "Theme", ["Dark (Default)", "AMOLED Black"])
-        self.create_toggle(box_gen, "Start with Windows", True)
-        self.create_toggle(box_gen, "Minimize to System Tray", True)
-        self.create_toggle(box_gen, "Confirm Before Exit", True)
+        
+        # Note: Changed to support dynamic config saving
+        self.create_toggle(box_gen, "Start with Windows", "start_with_win", True)
+        self.create_toggle(box_gen, "Minimize to System Tray", "min_tray", True)
+        self.create_toggle(box_gen, "Confirm Before Exit", "confirm_exit", True)
 
         box_launch = ctk.CTkFrame(col1, fg_color=CARD_COLOR, corner_radius=12, border_width=1, border_color=BORDER_COLOR)
         box_launch.pack(fill="x")
         ctk.CTkLabel(box_launch, text="LAUNCHER SETTINGS", font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_MUTED).pack(anchor="w", padx=15, pady=(15, 10))
-        self.create_toggle(box_launch, "Check for Updates", True)
-        self.create_toggle(box_launch, "Download Updates", True)
-        self.create_toggle(box_launch, "Beta Updates", False)
+        self.create_toggle(box_launch, "Check for Updates", "check_updates", True)
+        self.create_toggle(box_launch, "Download Updates", "dl_updates", True)
+        self.create_toggle(box_launch, "Beta Updates", "beta_updates", False)
 
         col2 = ctk.CTkFrame(settings_grid, fg_color="transparent")
         col2.grid(row=0, column=1, padx=6, pady=6, sticky="nsew")
@@ -526,14 +541,15 @@ class SupersonicClientMaster(ctk.CTk):
         self.ram_menu.set(f"{self.user_config.get('ram', 8192)} MB")
         self.ram_menu.pack(fill="x", padx=15, pady=(0, 10))
 
-        self.create_toggle(box_perf, "Preload Assets", True)
-        self.create_toggle(box_perf, "Smart Memory Mgmt", True)
-
-        box_dl = ctk.CTkFrame(col2, fg_color=CARD_COLOR, corner_radius=12, border_width=1, border_color=BORDER_COLOR)
-        box_dl.pack(fill="x")
-        ctk.CTkLabel(box_dl, text="DOWNLOAD SETTINGS", font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_MUTED).pack(anchor="w", padx=15, pady=(15, 10))
-        self.create_dropdown(box_dl, "Download Speed Limit", ["Unlimited", "10 MB/s", "5 MB/s"])
-        self.create_dropdown(box_dl, "Max Connections", ["16", "8", "4"])
+        # --- NEW OPTIMIZATION FEATURES ---
+        box_engine = ctk.CTkFrame(col2, fg_color=CARD_COLOR, corner_radius=12, border_width=1, border_color=ACCENT_CYAN)
+        box_engine.pack(fill="x", pady=(0, 12))
+        ctk.CTkLabel(box_engine, text="CORE ENGINE OPTIMIZATIONS", font=ctk.CTkFont(size=11, weight="bold"), text_color=ACCENT_CYAN).pack(anchor="w", padx=15, pady=(15, 10))
+        
+        self.create_toggle(box_engine, "Rewrite Physics Engine (Culling)", "opt_physics", True)
+        self.create_toggle(box_engine, "Logic & Tick Multithreading", "opt_logic", True)
+        self.create_toggle(box_engine, "Sound Engine Fast-Render", "opt_sound", True)
+        self.create_toggle(box_engine, "Mob AI Asynchronous Tasks", "opt_ai", True)
 
         col3 = ctk.CTkFrame(settings_grid, fg_color="transparent")
         col3.grid(row=0, column=2, padx=6, pady=6, sticky="nsew")
@@ -548,14 +564,14 @@ class SupersonicClientMaster(ctk.CTk):
         self.ver_menu.set(self.user_config.get("version", "1.21.4"))
         self.ver_menu.pack(fill="x", padx=15, pady=(0, 10))
 
-        self.create_toggle(box_mc, "Automatically Install Java", True)
-        self.create_toggle(box_mc, "Use Native Libraries", True)
+        self.create_toggle(box_mc, "Automatically Install Java", "auto_java", True)
+        self.create_toggle(box_mc, "Use Native Libraries", "native_libs", True)
 
         box_sync = ctk.CTkFrame(col3, fg_color=CARD_COLOR, corner_radius=12, border_width=1, border_color=BORDER_COLOR)
         box_sync.pack(fill="x")
         ctk.CTkLabel(box_sync, text="CLOUD & SYNC", font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_MUTED).pack(anchor="w", padx=15, pady=(15, 10))
-        self.create_toggle(box_sync, "Enable Cloud Sync", True)
-        self.create_toggle(box_sync, "Sync Across Devices", True)
+        self.create_toggle(box_sync, "Enable Cloud Sync", "cloud_sync", True)
+        self.create_toggle(box_sync, "Sync Across Devices", "sync_devices", True)
 
         cf = ctk.CTkFrame(box_sync, fg_color="transparent")
         cf.pack(fill="x", padx=15, pady=5)
@@ -595,12 +611,18 @@ class SupersonicClientMaster(ctk.CTk):
         dp.set(options[0])
         dp.pack(fill="x", padx=15, pady=(0, 10))
 
-    def create_toggle(self, parent, label, default_on):
+    def create_toggle(self, parent, label, config_key, default_on):
         f = ctk.CTkFrame(parent, fg_color="transparent")
         f.pack(fill="x", padx=15, pady=6)
         ctk.CTkLabel(f, text=label, font=ctk.CTkFont(size=11), text_color=TEXT_PRIMARY).pack(side="left")
-        sw = ctk.CTkSwitch(f, text="", progress_color=ACCENT_BLUE)
-        if default_on: sw.select()
+        
+        def on_toggle():
+            self.user_config[config_key] = sw.get() == 1
+            self.save_config()
+
+        sw = ctk.CTkSwitch(f, text="", progress_color=ACCENT_BLUE, command=on_toggle)
+        if self.user_config.get(config_key, default_on):
+            sw.select()
         sw.pack(side="right")
 
     def update_ram_cfg(self, val):
@@ -746,11 +768,31 @@ class SupersonicClientMaster(ctk.CTk):
         if not minecraft_launcher_lib.utils.is_minecraft_installed(version, mc_dir):
             minecraft_launcher_lib.install.install_minecraft_version(version, mc_dir)
 
+        # Base JVM Arguments
+        jvm_args = [f"-Xmx{ram_mb}M", f"-Xms{ram_mb}M", "-XX:+UnlockExperimentalVMOptions"]
+
+        # --- CORE ENGINE OPTIMIZATION INJECTIONS ---
+        if self.user_config.get("opt_logic", True):
+            # Aggressive Garbage Collection for Logic & Tick Engine multithreading
+            jvm_args.extend(["-XX:+UseG1GC", "-XX:G1NewSizePercent=20", "-XX:G1ReservePercent=20", "-XX:MaxGCPauseMillis=50", "-XX:G1HeapRegionSize=32M"])
+        
+        if self.user_config.get("opt_physics", True):
+            # Culling & Pre-touch optimizations for faster physics calculations
+            jvm_args.extend(["-XX:+AlwaysPreTouch", "-XX:+DisableExplicitGC", "-Djava.util.concurrent.ForkJoinPool.common.parallelism=4"])
+            
+        if self.user_config.get("opt_ai", True):
+            # Memory layout optimization for heavy Mob AI tasks
+            jvm_args.extend(["-XX:+UseNUMA", "-XX:+UseStringDeduplication", "-XX:ThreadPriorityPolicy=1"])
+            
+        if self.user_config.get("opt_sound", True):
+            # Buffer & Fast-Render for Sound Engine
+            jvm_args.extend(["-Dfml.ignorePatchDiscrepancies=true", "-Dorg.lwjgl.openal.libname=OpenAL"])
+
         options = {
             "username": username,
             "uuid": str(uuid.uuid4()),
             "token": "",
-            "jvmArguments": [f"-Xmx{ram_mb}M", f"-Xms{ram_mb}M", "-XX:+UnlockExperimentalVMOptions", "-XX:+UseG1GC"]
+            "jvmArguments": jvm_args
         }
         
         try:
