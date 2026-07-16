@@ -7,24 +7,25 @@ import shutil
 import requests
 import subprocess
 import webbrowser
+import urllib.request
 import tkinter as tk
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageDraw
 import minecraft_launcher_lib
 
-# --- ULTRA-MODERN DARK COLOUR PALETTE (Exactly from Screenshots) ---
-BG_COLOR = "#080A10"          # Darkest deep navy background
-SIDEBAR_COLOR = "#0D111A"     # Sidebar background
-CARD_COLOR = "#111622"        # Main card backgrounds
-INNER_CARD = "#171E2E"        # Inner widgets and sub-panels
-ACCENT_BLUE = "#1E5DFB"       # Primary electric blue
-ACCENT_CYAN = "#00B2FE"       # Cyan accent
-ACCENT_GREEN = "#10B981"      # Green success accent
-ACCENT_PURPLE = "#7C3AED"     # Purple premium/alt accent
-TEXT_PRIMARY = "#FFFFFF"      # Pure white text
-TEXT_MUTED = "#5D6B88"        # Soft gray/blue muted text
-BORDER_COLOR = "#1B2234"      # Thin border highlights
+# --- ULTRA-MODERN DARK COLOUR PALETTE ---
+BG_COLOR = "#080A10"
+SIDEBAR_COLOR = "#0D111A"
+CARD_COLOR = "#111622"
+INNER_CARD = "#171E2E"
+ACCENT_BLUE = "#1E5DFB"
+ACCENT_CYAN = "#00B2FE"
+ACCENT_GREEN = "#10B981"
+ACCENT_PURPLE = "#7C3AED"
+TEXT_PRIMARY = "#FFFFFF"
+TEXT_MUTED = "#5D6B88"
+BORDER_COLOR = "#1B2234"
 
 def resource_path(relative_path):
     try:
@@ -38,7 +39,6 @@ class SupersonicClientMaster(ctk.CTk):
         super().__init__()
 
         self.title("SUPERSONIC CLIENT v2.5.0")
-        self.geometry("1450 dropped_resizable")
         self.geometry("1440x900")
         self.minsize(1366, 768)
         self.configure(fg_color=BG_COLOR)
@@ -50,7 +50,6 @@ class SupersonicClientMaster(ctk.CTk):
         self.appdata_dir = os.path.join(os.getenv('APPDATA'), 'SupersonicClient', 'bin')
         os.makedirs(self.appdata_dir, exist_ok=True)
 
-        # Layout grids
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
 
@@ -71,24 +70,21 @@ class SupersonicClientMaster(ctk.CTk):
             with open(self.config_file, "w") as f: json.dump(self.user_config, f, indent=4)
         except: pass
 
-    # ==================== HEADER SYSTEM ====================
     def setup_header(self):
-        # Top title overlay matches "THE NEXT GENERATION MINECRAFT LAUNCHER"
         self.header_frame = ctk.CTkFrame(self, height=45, fg_color=BG_COLOR, corner_radius=0)
         self.header_frame.grid(row=0, column=1, sticky="ew")
         self.header_frame.pack_propagate(False)
         
+        # FIXED: Removed 'spacing=2' from CTkFont
         lbl = ctk.CTkLabel(self.header_frame, text="THE NEXT GENERATION MINECRAFT LAUNCHER", 
-                             font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold", spacing=2), text_color=ACCENT_CYAN)
+                             font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=ACCENT_CYAN)
         lbl.pack(pady=10)
 
-    # ==================== SIDEBAR SYSTEM ====================
     def setup_sidebar(self):
         self.sidebar = ctk.CTkFrame(self, width=240, corner_radius=0, fg_color=SIDEBAR_COLOR, border_width=1, border_color=BORDER_COLOR)
         self.sidebar.grid(row=0, column=0, rowspan=2, sticky="nsew")
         self.sidebar.grid_rowconfigure(12, weight=1)
 
-        # Brand Logo area
         logo_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         logo_frame.grid(row=0, column=0, padx=20, pady=(20, 25), sticky="w")
         
@@ -102,7 +98,6 @@ class SupersonicClientMaster(ctk.CTk):
         ctk.CTkLabel(logo_frame, text=" SUPERSONIC\n CLIENT", font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"), 
                      text_color=TEXT_PRIMARY, justify="left").pack(side="left", padx=10)
 
-        # Nav Buttons list matching screenshots
         self.nav_buttons = {}
         nav_items = [
             ("🏠  Dashboard", "Dashboard", None),
@@ -133,11 +128,9 @@ class SupersonicClientMaster(ctk.CTk):
                                          corner_radius=4, width=32, height=16)
                 badge_lbl.pack(side="right", padx=(0, 10))
 
-        # Bottom Account info
         self.profile_frame = ctk.CTkFrame(self.sidebar, fg_color=CARD_COLOR, corner_radius=10, border_width=1, border_color=BORDER_COLOR)
         self.profile_frame.grid(row=13, column=0, padx=15, pady=(10, 15), sticky="ew")
         
-        # User details display
         lbl_acc = ctk.CTkLabel(self.profile_frame, text="Account", font=ctk.CTkFont(size=10), text_color=TEXT_MUTED)
         lbl_acc.pack(anchor="w", padx=12, pady=(8, 0))
         
@@ -148,13 +141,11 @@ class SupersonicClientMaster(ctk.CTk):
         premium_lbl = ctk.CTkLabel(self.profile_frame, text="👑 Premium", font=ctk.CTkFont(size=11, weight="bold"), text_color="#F59E0B")
         premium_lbl.pack(anchor="w", padx=12, pady=(0, 8))
 
-        # Discord & Links
         link_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         link_frame.grid(row=14, column=0, padx=15, pady=(0, 15), sticky="ew")
         ctk.CTkButton(link_frame, text="🌐 Website", fg_color="transparent", text_color=TEXT_MUTED, width=80, height=20, font=ctk.CTkFont(size=11), command=lambda: webbrowser.open("https://supersonicclient.com")).pack(side="left")
         ctk.CTkButton(link_frame, text="💬 Discord", fg_color="transparent", text_color=TEXT_MUTED, width=80, height=20, font=ctk.CTkFont(size=11), command=lambda: webbrowser.open("https://discord.gg/supersonic")).pack(side="right")
 
-    # ==================== MAIN FRAMES ROUTER ====================
     def setup_frames(self):
         self.frames_container = ctk.CTkFrame(self, fg_color="transparent", corner_radius=0)
         self.frames_container.grid(row=1, column=1, sticky="nsew")
@@ -168,7 +159,6 @@ class SupersonicClientMaster(ctk.CTk):
         self.init_settings()
         self.init_agent()
 
-        # Placeholders for empty views
         for f_name in ["Instances", "Servers", "ResourcePacks", "Worlds"]:
             frame = ctk.CTkFrame(self.frames_container, fg_color="transparent")
             self.frames[f_name] = frame
@@ -184,12 +174,10 @@ class SupersonicClientMaster(ctk.CTk):
             else:
                 f.grid_forget()
 
-    # ==================== FRAME 1: DASHBOARD ====================
     def init_dashboard(self):
         f = ctk.CTkFrame(self.frames_container, fg_color="transparent")
         self.frames["Dashboard"] = f
         
-        # Configure layout inside dashboard
         f.grid_columnconfigure(0, weight=3)
         f.grid_columnconfigure(1, weight=1)
         f.grid_rowconfigure(0, weight=1)
@@ -197,7 +185,6 @@ class SupersonicClientMaster(ctk.CTk):
         left_scroll = ctk.CTkScrollableFrame(f, fg_color="transparent")
         left_scroll.grid(row=0, column=0, sticky="nsew", padx=(20, 10), pady=10)
 
-        # --- Sub-widget 1: Header Banner with Play button ---
         banner = ctk.CTkFrame(left_scroll, fg_color=CARD_COLOR, corner_radius=15, border_width=1, border_color=BORDER_COLOR, height=180)
         banner.pack(fill="x", pady=(0, 20))
         banner.pack_propagate(False)
@@ -212,7 +199,6 @@ class SupersonicClientMaster(ctk.CTk):
                                       fg_color=ACCENT_BLUE, hover_color="#1446C9", width=180, height=55, corner_radius=10, command=self.handle_launch)
         self.play_btn.place(relx=0.95, rely=0.5, anchor="e")
 
-        # --- Sub-widget 2: All Addons (One Click) ---
         addons_header = ctk.CTkFrame(left_scroll, fg_color="transparent")
         addons_header.pack(fill="x", pady=(0, 10))
         ctk.CTkLabel(addons_header, text="ALL ADDONS - ONE CLICK INSTALL", font=ctk.CTkFont(size=14, weight="bold"), text_color=TEXT_PRIMARY).pack(side="left")
@@ -238,7 +224,6 @@ class SupersonicClientMaster(ctk.CTk):
             ctk.CTkLabel(card, text=name, font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_PRIMARY).pack(anchor="w", padx=10, pady=(10, 2))
             ctk.CTkLabel(card, text="✔️ Installed", font=ctk.CTkFont(size=9), text_color=ACCENT_GREEN).pack(anchor="w", padx=10)
 
-        # --- Sub-widget 3: Server Card ---
         server_header = ctk.CTkFrame(left_scroll, fg_color="transparent")
         server_header.pack(fill="x", pady=(0, 10))
         ctk.CTkLabel(server_header, text="FEATURED SERVERS", font=ctk.CTkFont(size=14, weight="bold"), text_color=TEXT_PRIMARY).pack(side="left")
@@ -250,13 +235,11 @@ class SupersonicClientMaster(ctk.CTk):
         ctk.CTkLabel(server_card, text="IP: www.NarratorMC.net", font=ctk.CTkFont(size=13), text_color=TEXT_MUTED).place(x=25, y=48)
         ctk.CTkLabel(server_card, text="ONLINE", font=ctk.CTkFont(size=11, weight="bold"), fg_color="#064E3B", text_color=ACCENT_GREEN, corner_radius=6, padx=12, pady=5).place(relx=0.95, rely=0.5, anchor="e")
 
-        # --- Sub-widget 4: Dashboard Footer Status Gauges ---
         status_bar = ctk.CTkFrame(left_scroll, fg_color=CARD_COLOR, corner_radius=12, border_width=1, border_color=BORDER_COLOR, height=80)
         status_bar.pack(fill="x")
         status_bar.grid_rowconfigure(0, weight=1)
         for col in range(3): status_bar.grid_columnconfigure(col, weight=1)
 
-        # Progress bar 1
         pb1_f = ctk.CTkFrame(status_bar, fg_color="transparent")
         pb1_f.grid(row=0, column=0, padx=20, sticky="ew")
         ctk.CTkLabel(pb1_f, text="RAM Usage", font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_MUTED).pack(anchor="w")
@@ -265,7 +248,6 @@ class SupersonicClientMaster(ctk.CTk):
         p1.pack(fill="x", pady=5)
         ctk.CTkLabel(pb1_f, text="3.2 GB / 8 GB", font=ctk.CTkFont(size=11), text_color=TEXT_PRIMARY).pack(anchor="e")
 
-        # Progress bar 2
         pb2_f = ctk.CTkFrame(status_bar, fg_color="transparent")
         pb2_f.grid(row=0, column=1, padx=20, sticky="ew")
         ctk.CTkLabel(pb2_f, text="FPS Boost", font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_MUTED).pack(anchor="w")
@@ -274,7 +256,6 @@ class SupersonicClientMaster(ctk.CTk):
         p2.pack(fill="x", pady=5)
         ctk.CTkLabel(pb2_f, text="+120%", font=ctk.CTkFont(size=11), text_color=ACCENT_GREEN).pack(anchor="e")
 
-        # Progress bar 3
         pb3_f = ctk.CTkFrame(status_bar, fg_color="transparent")
         pb3_f.grid(row=0, column=2, padx=20, sticky="ew")
         ctk.CTkLabel(pb3_f, text="Ping latency", font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_MUTED).pack(anchor="w")
@@ -283,7 +264,6 @@ class SupersonicClientMaster(ctk.CTk):
         p3.pack(fill="x", pady=5)
         ctk.CTkLabel(pb3_f, text="24ms", font=ctk.CTkFont(size=11), text_color=ACCENT_PURPLE).pack(anchor="e")
 
-        # --- Right Panel Dashboard (Agent Quickview) ---
         right_panel = ctk.CTkFrame(f, fg_color=SIDEBAR_COLOR, width=320, border_width=1, border_color=BORDER_COLOR)
         right_panel.grid(row=0, column=1, sticky="nsew", padx=(10, 20), pady=10)
         right_panel.pack_propagate(False)
@@ -291,7 +271,6 @@ class SupersonicClientMaster(ctk.CTk):
         ctk.CTkLabel(right_panel, text="AGENT (AI) BETA", font=ctk.CTkFont(size=14, weight="bold"), text_color=TEXT_PRIMARY).pack(anchor="w", padx=20, pady=(20, 5))
         ctk.CTkLabel(right_panel, text="Your personal AI assistant", font=ctk.CTkFont(size=11), text_color=TEXT_MUTED).pack(anchor="w", padx=20, pady=(0, 20))
 
-        # Mini Agent Terminal Panel
         agent_term = ctk.CTkFrame(right_panel, fg_color=CARD_COLOR, corner_radius=10, border_width=1, border_color=BORDER_COLOR, height=180)
         agent_term.pack(fill="x", padx=15, pady=5)
         agent_term.pack_propagate(False)
@@ -300,14 +279,12 @@ class SupersonicClientMaster(ctk.CTk):
         ctk.CTkLabel(agent_term, text="I can help you auto-fix crashes,\noptimize performance specs,\nand automatically download\nrequired client files.", 
                      font=ctk.CTkFont(size=11), text_color=TEXT_PRIMARY, justify="left").pack(anchor="w", padx=15)
 
-        # Quick fix panel
         fix_panel = ctk.CTkFrame(right_panel, fg_color=INNER_CARD, corner_radius=10, height=100)
         fix_panel.pack(fill="x", padx=15, pady=15)
         fix_panel.pack_propagate(False)
         ctk.CTkLabel(fix_panel, text="Auto Fix (One Click)", font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_PRIMARY).pack(anchor="w", padx=15, pady=(10, 5))
         ctk.CTkButton(fix_panel, text="🔧 Scan & Fix", fg_color=ACCENT_BLUE, height=30).pack(fill="x", padx=15)
 
-        # Logs terminal mock
         ctk.CTkLabel(right_panel, text="Recent System Actions", font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT_PRIMARY).pack(anchor="w", padx=20, pady=(15, 5))
         logs_box = ctk.CTkFrame(right_panel, fg_color=CARD_COLOR, corner_radius=8, border_width=1, border_color=BORDER_COLOR)
         logs_box.pack(fill="both", expand=True, padx=15, pady=(5, 15))
@@ -321,7 +298,6 @@ class SupersonicClientMaster(ctk.CTk):
         for log in mock_logs:
             ctk.CTkLabel(logs_box, text=log, font=ctk.CTkFont(family="Courier New", size=11), text_color=ACCENT_GREEN).pack(anchor="w", padx=15, pady=6)
 
-    # ==================== FRAME 2: MODPACKS ====================
     def init_modpacks(self):
         f = ctk.CTkFrame(self.frames_container, fg_color="transparent")
         self.frames["Modpacks"] = f
@@ -333,18 +309,15 @@ class SupersonicClientMaster(ctk.CTk):
         left_area = ctk.CTkFrame(f, fg_color="transparent")
         left_area.grid(row=0, column=0, sticky="nsew", padx=(20, 10), pady=10)
 
-        # Header Search Modpack title
         hdr = ctk.CTkFrame(left_area, fg_color="transparent")
         hdr.pack(fill="x", pady=(10, 15))
         ctk.CTkLabel(hdr, text="MODPACKS", font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"), text_color=TEXT_PRIMARY).pack(side="left")
         ctk.CTkButton(hdr, text="+ Import Modpack", fg_color=INNER_CARD, border_width=1, border_color=BORDER_COLOR).pack(side="right", padx=10)
         ctk.CTkButton(hdr, text="Browse CurseForge ↗", fg_color=ACCENT_BLUE).pack(side="right")
 
-        # Scrollable Packs Grid
         grid_scroll = ctk.CTkScrollableFrame(left_area, fg_color="transparent")
         grid_scroll.pack(fill="both", expand=True)
         
-        # Two columns grid inside scroll
         grid_scroll.grid_columnconfigure(0, weight=1)
         grid_scroll.grid_columnconfigure(1, weight=1)
 
@@ -373,7 +346,6 @@ class SupersonicClientMaster(ctk.CTk):
             btn_f.pack(fill="x", side="bottom", pady=10, padx=15)
             ctk.CTkButton(btn_f, text="📥 Install Now", fg_color=ACCENT_BLUE, height=28).pack(side="right")
 
-        # Right sidebar (filters/metadata)
         r_panel = ctk.CTkFrame(f, fg_color=SIDEBAR_COLOR, width=320, border_width=1, border_color=BORDER_COLOR)
         r_panel.grid(row=0, column=1, sticky="nsew", padx=(10, 20), pady=10)
         r_panel.pack_propagate(False)
@@ -387,7 +359,6 @@ class SupersonicClientMaster(ctk.CTk):
         v_drop = ctk.CTkOptionMenu(r_panel, values=["All Versions", "1.21.4", "1.20.1", "1.19.2"], fg_color=INNER_CARD)
         v_drop.pack(fill="x", padx=15, pady=(5, 15))
 
-        # Bottom stats
         ctk.CTkLabel(r_panel, text="Client Statistics", font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT_PRIMARY).pack(anchor="w", padx=20, pady=(10, 5))
         stats_box = ctk.CTkFrame(r_panel, fg_color=CARD_COLOR, corner_radius=8, border_width=1, border_color=BORDER_COLOR)
         stats_box.pack(fill="x", padx=15, pady=5)
@@ -399,7 +370,6 @@ class SupersonicClientMaster(ctk.CTk):
             ctk.CTkLabel(df, text=k, font=ctk.CTkFont(size=11), text_color=TEXT_MUTED).pack(side="left")
             ctk.CTkLabel(df, text=v, font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_PRIMARY).pack(side="right")
 
-    # ==================== FRAME 3: ADDONS ====================
     def init_addons(self):
         f = ctk.CTkFrame(self.frames_container, fg_color="transparent")
         self.frames["Addons"] = f
@@ -411,13 +381,11 @@ class SupersonicClientMaster(ctk.CTk):
         left_area = ctk.CTkFrame(f, fg_color="transparent")
         left_area.grid(row=0, column=0, sticky="nsew", padx=(20, 10), pady=10)
 
-        # Header Title
         hdr = ctk.CTkFrame(left_area, fg_color="transparent")
         hdr.pack(fill="x", pady=(10, 15))
         ctk.CTkLabel(hdr, text="ADDONS MANAGER", font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"), text_color=TEXT_PRIMARY).pack(side="left")
         ctk.CTkButton(hdr, text="+ Import Local .jar", fg_color=ACCENT_PURPLE, command=self.import_local_jar).pack(side="right")
 
-        # Scrollable Addons Grid
         grid_scroll = ctk.CTkScrollableFrame(left_area, fg_color="transparent")
         grid_scroll.pack(fill="both", expand=True)
 
@@ -451,32 +419,27 @@ class SupersonicClientMaster(ctk.CTk):
             status_f.pack(fill="x", side="bottom", padx=12, pady=8)
             ctk.CTkLabel(status_f, text="✔️ Installed", font=ctk.CTkFont(size=10, weight="bold"), text_color=ACCENT_GREEN).pack(side="left")
 
-        # Bottom Performance Charts Section (Matches Screenshot 3)
         perf_f = ctk.CTkFrame(left_area, fg_color=CARD_COLOR, corner_radius=12, border_width=1, border_color=BORDER_COLOR, height=120)
         perf_f.pack(fill="x", pady=(15, 0))
         perf_f.pack_propagate(False)
 
         ctk.CTkLabel(perf_f, text="Performance Improvements (Live)", font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_PRIMARY).place(x=15, y=8)
 
-        # FPS Graph mock
         c1 = tk.Canvas(perf_f, bg=INNER_CARD, highlightthickness=0, width=130, height=50)
         c1.place(x=15, y=35)
         c1.create_line(0, 40, 30, 35, 60, 20, 90, 10, 130, 5, fill=ACCENT_CYAN, width=2)
         ctk.CTkLabel(perf_f, text="FPS Boost (+120%)", font=ctk.CTkFont(size=10, weight="bold"), text_color=ACCENT_CYAN).place(x=15, y=90)
 
-        # RAM Graph mock
         c2 = tk.Canvas(perf_f, bg=INNER_CARD, highlightthickness=0, width=130, height=50)
         c2.place(x=175, y=35)
         c2.create_line(0, 10, 30, 25, 60, 30, 90, 42, 130, 45, fill=ACCENT_PURPLE, width=2)
         ctk.CTkLabel(perf_f, text="RAM Usage (-35%)", font=ctk.CTkFont(size=10, weight="bold"), text_color=ACCENT_PURPLE).place(x=175, y=90)
 
-        # CPU Graph mock
         c3 = tk.Canvas(perf_f, bg=INNER_CARD, highlightthickness=0, width=130, height=50)
         c3.place(x=335, y=35)
         c3.create_line(0, 15, 40, 25, 80, 35, 130, 45, fill=ACCENT_GREEN, width=2)
         ctk.CTkLabel(perf_f, text="CPU Usage (-28%)", font=ctk.CTkFont(size=10, weight="bold"), text_color=ACCENT_GREEN).place(x=335, y=90)
 
-        # Right Panel
         r_panel = ctk.CTkFrame(f, fg_color=SIDEBAR_COLOR, width=320, border_width=1, border_color=BORDER_COLOR)
         r_panel.grid(row=0, column=1, sticky="nsew", padx=(10, 20), pady=10)
         r_panel.pack_propagate(False)
@@ -487,7 +450,6 @@ class SupersonicClientMaster(ctk.CTk):
         ctk.CTkLabel(status_card, text="✔️ Client fully optimized!", font=ctk.CTkFont(size=12, weight="bold"), text_color=ACCENT_GREEN).pack(pady=(25, 5))
         ctk.CTkLabel(status_card, text="All addons up to date.", font=ctk.CTkFont(size=11), text_color=TEXT_MUTED).pack()
 
-        # Addon Info panel
         info_f = ctk.CTkFrame(r_panel, fg_color=CARD_COLOR, corner_radius=10, border_width=1, border_color=BORDER_COLOR)
         info_f.pack(fill="both", expand=True, padx=15, pady=(0, 15))
         ctk.CTkLabel(info_f, text="Addon Metadata", font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT_PRIMARY).pack(anchor="w", padx=15, pady=15)
@@ -510,7 +472,6 @@ class SupersonicClientMaster(ctk.CTk):
             except Exception as e:
                 messagebox.showerror("Error", str(e))
 
-    # ==================== FRAME 4: SETTINGS ====================
     def init_settings(self):
         f = ctk.CTkFrame(self.frames_container, fg_color="transparent")
         self.frames["Settings"] = f
@@ -522,24 +483,20 @@ class SupersonicClientMaster(ctk.CTk):
         left_scroll = ctk.CTkScrollableFrame(f, fg_color="transparent")
         left_scroll.grid(row=0, column=0, sticky="nsew", padx=(20, 10), pady=10)
 
-        # Settings main header matching screen
         hdr = ctk.CTkFrame(left_scroll, fg_color="transparent")
         hdr.pack(fill="x", pady=(0, 15))
         ctk.CTkLabel(hdr, text="SETTINGS", font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"), text_color=TEXT_PRIMARY).pack(side="left")
         ctk.CTkButton(hdr, text="Reset to Default", fg_color=INNER_CARD, border_width=1, border_color=BORDER_COLOR, width=120).pack(side="right")
 
-        # 3 Columns structure matching Screenshot 4
         settings_grid = ctk.CTkFrame(left_scroll, fg_color="transparent")
         settings_grid.pack(fill="both", expand=True)
         settings_grid.grid_columnconfigure(0, weight=1)
         settings_grid.grid_columnconfigure(1, weight=1)
         settings_grid.grid_columnconfigure(2, weight=1)
 
-        # --- Column 1: General & Launcher Settings ---
         col1 = ctk.CTkFrame(settings_grid, fg_color="transparent")
         col1.grid(row=0, column=0, padx=6, pady=6, sticky="nsew")
 
-        # General Settings Box
         box_gen = ctk.CTkFrame(col1, fg_color=CARD_COLOR, corner_radius=12, border_width=1, border_color=BORDER_COLOR)
         box_gen.pack(fill="x", pady=(0, 12))
         ctk.CTkLabel(box_gen, text="GENERAL SETTINGS", font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_MUTED).pack(anchor="w", padx=15, pady=(15, 10))
@@ -549,7 +506,6 @@ class SupersonicClientMaster(ctk.CTk):
         self.create_toggle(box_gen, "Minimize to System Tray", True)
         self.create_toggle(box_gen, "Confirm Before Exit", True)
 
-        # Launcher Settings Box
         box_launch = ctk.CTkFrame(col1, fg_color=CARD_COLOR, corner_radius=12, border_width=1, border_color=BORDER_COLOR)
         box_launch.pack(fill="x")
         ctk.CTkLabel(box_launch, text="LAUNCHER SETTINGS", font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_MUTED).pack(anchor="w", padx=15, pady=(15, 10))
@@ -557,17 +513,14 @@ class SupersonicClientMaster(ctk.CTk):
         self.create_toggle(box_launch, "Download Updates", True)
         self.create_toggle(box_launch, "Beta Updates", False)
 
-        # --- Column 2: Performance & Download Settings ---
         col2 = ctk.CTkFrame(settings_grid, fg_color="transparent")
         col2.grid(row=0, column=1, padx=6, pady=6, sticky="nsew")
 
-        # Performance Settings Box
         box_perf = ctk.CTkFrame(col2, fg_color=CARD_COLOR, corner_radius=12, border_width=1, border_color=BORDER_COLOR)
         box_perf.pack(fill="x", pady=(0, 12))
         ctk.CTkLabel(box_perf, text="PERFORMANCE SETTINGS", font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_MUTED).pack(anchor="w", padx=15, pady=(15, 10))
         self.create_dropdown(box_perf, "Performance Mode", ["Ultra (Recommended)", "Standard"])
         
-        # Custom RAM Selector dropdown matching screen
         ctk.CTkLabel(box_perf, text="RAM Allocation (Default)", font=ctk.CTkFont(size=11), text_color=TEXT_PRIMARY).pack(anchor="w", padx=15, pady=(5, 2))
         self.ram_menu = ctk.CTkOptionMenu(box_perf, values=["2048 MB", "4096 MB", "8192 MB", "12288 MB", "16384 MB"], fg_color=INNER_CARD, button_color=ACCENT_BLUE, command=self.update_ram_cfg)
         self.ram_menu.set(f"{self.user_config.get('ram', 8192)} MB")
@@ -576,24 +529,20 @@ class SupersonicClientMaster(ctk.CTk):
         self.create_toggle(box_perf, "Preload Assets", True)
         self.create_toggle(box_perf, "Smart Memory Mgmt", True)
 
-        # Download Settings Box
         box_dl = ctk.CTkFrame(col2, fg_color=CARD_COLOR, corner_radius=12, border_width=1, border_color=BORDER_COLOR)
         box_dl.pack(fill="x")
         ctk.CTkLabel(box_dl, text="DOWNLOAD SETTINGS", font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_MUTED).pack(anchor="w", padx=15, pady=(15, 10))
         self.create_dropdown(box_dl, "Download Speed Limit", ["Unlimited", "10 MB/s", "5 MB/s"])
         self.create_dropdown(box_dl, "Max Connections", ["16", "8", "4"])
 
-        # --- Column 3: Minecraft & Cloud & Sync ---
         col3 = ctk.CTkFrame(settings_grid, fg_color="transparent")
         col3.grid(row=0, column=2, padx=6, pady=6, sticky="nsew")
 
-        # Minecraft Settings Box
         box_mc = ctk.CTkFrame(col3, fg_color=CARD_COLOR, corner_radius=12, border_width=1, border_color=BORDER_COLOR)
         box_mc.pack(fill="x", pady=(0, 12))
         ctk.CTkLabel(box_mc, text="MINECRAFT SETTINGS", font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_MUTED).pack(anchor="w", padx=15, pady=(15, 10))
         self.create_dropdown(box_mc, "Default Java Version", ["Java 21 (Recommended)", "Java 17"])
         
-        # Game version selector
         ctk.CTkLabel(box_mc, text="Game Launch Version", font=ctk.CTkFont(size=11), text_color=TEXT_PRIMARY).pack(anchor="w", padx=15, pady=(5, 2))
         self.ver_menu = ctk.CTkOptionMenu(box_mc, values=["1.21.4", "1.21.1", "1.20.1", "1.19.2"], fg_color=INNER_CARD, button_color=ACCENT_BLUE, command=self.update_ver_cfg)
         self.ver_menu.set(self.user_config.get("version", "1.21.4"))
@@ -602,14 +551,12 @@ class SupersonicClientMaster(ctk.CTk):
         self.create_toggle(box_mc, "Automatically Install Java", True)
         self.create_toggle(box_mc, "Use Native Libraries", True)
 
-        # Cloud & Sync Box
         box_sync = ctk.CTkFrame(col3, fg_color=CARD_COLOR, corner_radius=12, border_width=1, border_color=BORDER_COLOR)
         box_sync.pack(fill="x")
         ctk.CTkLabel(box_sync, text="CLOUD & SYNC", font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_MUTED).pack(anchor="w", padx=15, pady=(15, 10))
         self.create_toggle(box_sync, "Enable Cloud Sync", True)
         self.create_toggle(box_sync, "Sync Across Devices", True)
 
-        # Cloud storage usage slider widget
         cf = ctk.CTkFrame(box_sync, fg_color="transparent")
         cf.pack(fill="x", padx=15, pady=5)
         ctk.CTkLabel(cf, text="Cloud Storage", font=ctk.CTkFont(size=11), text_color=TEXT_MUTED).pack(side="left")
@@ -618,7 +565,6 @@ class SupersonicClientMaster(ctk.CTk):
         sl.set(0.24)
         sl.pack(fill="x", padx=15, pady=(0, 15))
 
-        # --- Settings Right Panel System Overview ---
         r_panel = ctk.CTkFrame(f, fg_color=SIDEBAR_COLOR, width=320, border_width=1, border_color=BORDER_COLOR)
         r_panel.grid(row=0, column=1, sticky="nsew", padx=(10, 20), pady=10)
         r_panel.pack_propagate(False)
@@ -665,7 +611,6 @@ class SupersonicClientMaster(ctk.CTk):
         self.user_config["version"] = val
         self.save_config()
 
-    # ==================== FRAME 5: AGENT (AI) ====================
     def init_agent(self):
         f = ctk.CTkFrame(self.frames_container, fg_color="transparent")
         self.frames["Agent"] = f
@@ -677,7 +622,6 @@ class SupersonicClientMaster(ctk.CTk):
         left_scroll = ctk.CTkScrollableFrame(f, fg_color="transparent")
         left_scroll.grid(row=0, column=0, sticky="nsew", padx=(20, 10), pady=10)
 
-        # Banner Header matching Screenshot 5
         hdr = ctk.CTkFrame(left_scroll, fg_color=CARD_COLOR, corner_radius=15, border_width=1, border_color=BORDER_COLOR, height=130)
         hdr.pack(fill="x", pady=(0, 20))
         hdr.pack_propagate(False)
@@ -685,22 +629,18 @@ class SupersonicClientMaster(ctk.CTk):
         ctk.CTkLabel(hdr, text="Autonomous optimization & crash detection engine in real-time.", font=ctk.CTkFont(size=12), text_color=TEXT_MUTED).place(x=30, y=60)
         ctk.CTkLabel(hdr, text="🟢 Agent Engine Synchronized", font=ctk.CTkFont(size=11, weight="bold"), text_color=ACCENT_GREEN).place(x=30, y=95)
 
-        # System Status Dial and Actions Row
         row1 = ctk.CTkFrame(left_scroll, fg_color="transparent")
         row1.pack(fill="x", pady=(0, 20))
         row1.grid_columnconfigure(0, weight=2)
         row1.grid_columnconfigure(1, weight=3)
 
-        # Glowing dial system health box
         health_box = ctk.CTkFrame(row1, fg_color=CARD_COLOR, corner_radius=12, border_width=1, border_color=BORDER_COLOR, height=180)
         health_box.grid(row=0, column=0, padx=(0, 10), sticky="nsew")
         health_box.pack_propagate(False)
         ctk.CTkLabel(health_box, text="System Health Overview", font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT_MUTED).pack(anchor="w", padx=15, pady=10)
         
-        # Circular Canvas arc drawing
         dial_c = tk.Canvas(health_box, bg=CARD_COLOR, highlightthickness=0, width=110, height=110)
         dial_c.pack(side="left", padx=15)
-        # draw arc for 98%
         dial_c.create_arc(10, 10, 100, 100, start=90, extent=-352, outline=ACCENT_BLUE, width=8, style="arc")
         dial_c.create_text(55, 55, text="98%", fill=TEXT_PRIMARY, font=("Segoe UI", 16, "bold"))
 
@@ -710,7 +650,6 @@ class SupersonicClientMaster(ctk.CTk):
         ctk.CTkLabel(det_f, text="✔ Java Version: Ok", font=ctk.CTkFont(size=10), text_color=ACCENT_GREEN).pack(anchor="w")
         ctk.CTkLabel(det_f, text="✔ Performance: Max", font=ctk.CTkFont(size=10), text_color=ACCENT_GREEN).pack(anchor="w")
 
-        # Recommended Fixes Box
         rec_box = ctk.CTkFrame(row1, fg_color=CARD_COLOR, corner_radius=12, border_width=1, border_color=BORDER_COLOR, height=180)
         rec_box.grid(row=0, column=1, padx=(10, 0), sticky="nsew")
         rec_box.pack_propagate(False)
@@ -724,7 +663,6 @@ class SupersonicClientMaster(ctk.CTk):
             ctk.CTkLabel(rf, text=f"{title}\n{sub}", font=ctk.CTkFont(size=10), text_color=TEXT_PRIMARY, justify="left").pack(side="left", padx=10)
             ctk.CTkButton(rf, text="Apply", fg_color=ACCENT_BLUE, width=60, height=24, corner_radius=4).pack(side="right", padx=10)
 
-        # Bottom Active Tasks Panel
         tasks_f = ctk.CTkFrame(left_scroll, fg_color=CARD_COLOR, corner_radius=12, border_width=1, border_color=BORDER_COLOR)
         tasks_f.pack(fill="x")
         ctk.CTkLabel(tasks_f, text="Active Background Tasks", font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT_PRIMARY).pack(anchor="w", padx=15, pady=15)
@@ -740,7 +678,6 @@ class SupersonicClientMaster(ctk.CTk):
             pb.set(pct)
             pb.pack(fill="x", padx=15, pady=(2, 10))
 
-        # Right Panel Chat Widget
         r_panel = ctk.CTkFrame(f, fg_color=SIDEBAR_COLOR, width=320, border_width=1, border_color=BORDER_COLOR)
         r_panel.grid(row=0, column=1, sticky="nsew", padx=(10, 20), pady=10)
         r_panel.pack_propagate(False)
@@ -778,83 +715,53 @@ class SupersonicClientMaster(ctk.CTk):
             req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'}, method='POST')
             with urllib.request.urlopen(req) as response:
                 res = json.loads(response.read().decode('utf-8'))
-            reply = res['candidates'][0]['content']['parts'][0]['text'].strip()
+            reply = res.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', 'No response.')
+        except Exception as e:
+            reply = "I'm offline or disconnected right now. Please check your internet connection."
 
-            self.chat_history.configure(state="normal")
-            self.chat_history.insert("end", f"🤖 Agent: {reply}\n\n")
-            self.chat_history.see("end")
-            self.chat_history.configure(state="disabled")
-        except:
-            self.chat_history.configure(state="normal")
-            self.chat_history.insert("end", "🤖 Agent: Crash analysis pipeline failed. Please verify API configuration and network.\n\n")
-            self.chat_history.configure(state="disabled")
+        self.after(0, self.append_ai_reply, reply)
 
-    # ==================== CORE MC LAUNCH & MESA SYSTEM ====================
+    def append_ai_reply(self, reply):
+        self.chat_history.configure(state="normal")
+        self.chat_history.insert("end", f"🤖 SupersonicAI:\n{reply}\n\n")
+        self.chat_history.see("end")
+        self.chat_history.configure(state="disabled")
+
     def handle_launch(self):
-        if self.game_process and self.game_process.poll() is None:
-            try:
+        if self.play_btn.cget("text") == "▶  PLAY":
+            self.play_btn.configure(text="⏳ LAUNCHING...", fg_color="#F59E0B")
+            threading.Thread(target=self.start_minecraft, daemon=True).start()
+        elif self.play_btn.cget("text") == "🛑 KILL PROCESS":
+            if self.game_process:
                 self.game_process.terminate()
                 self.play_btn.configure(text="▶  PLAY", fg_color=ACCENT_BLUE)
-            except: pass
-        else:
-            self.play_btn.configure(state="disabled", text="RUNNING...")
-            threading.Thread(target=self.launch_sequence, daemon=True).start()
+                messagebox.showinfo("Game Closed", "Minecraft forcefully closed.")
 
-    def setup_mesa_drivers(self):
-        # Fallback offline dynamic link setup for D3D12 boost
-        files = {
-            "glslangValidator.exe": "https://github.com/vulkan-sdk-mirror/glslangValidator.exe",
-            "opengl32.dll": "https://github.com/pal1000/mesa-dist-win/releases/download/23.1.3/opengl32.dll"
-        }
-        for fn, url in files.items():
-            target = os.path.join(self.appdata_dir, fn)
-            bundled = resource_path(fn)
-            if os.path.exists(bundled) and not os.path.isdir(bundled):
-                if not os.path.exists(target) or os.path.getsize(target) != os.path.getsize(bundled):
-                    try: shutil.copy2(bundled, target)
-                    except: pass
-            else:
-                if not os.path.exists(target) or os.path.getsize(target) < 500000:
-                    try:
-                        res = requests.get(url, timeout=10)
-                        if res.status_code == 200:
-                            with open(target, "wb") as f: f.write(res.content)
-                    except: pass
+    def start_minecraft(self):
+        mc_dir = minecraft_launcher_lib.utils.get_minecraft_directory()
+        version = self.user_config.get("version", "1.21.4")
+        username = self.user_config.get("username", "Raffiee_playssMC")
+        ram_mb = self.user_config.get("ram", 8192)
 
-    def launch_sequence(self):
-        try:
-            self.setup_mesa_drivers()
-            mc_dir = minecraft_launcher_lib.utils.get_minecraft_directory()
-            version = self.user_config.get("version", "1.21.4")
-
+        if not minecraft_launcher_lib.utils.is_minecraft_installed(version, mc_dir):
             minecraft_launcher_lib.install.install_minecraft_version(version, mc_dir)
-            fabric_ver = minecraft_launcher_lib.fabric.get_latest_loader_version()
-            minecraft_launcher_lib.fabric.install_fabric(version, mc_dir, loader_version=fabric_ver)
 
-            username = self.user_config.get("username", "Raffiee_playssMC")
-            opts = {
-                "username": username,
-                "uuid": str(uuid.uuid3(uuid.NAMESPACE_DNS, username)),
-                "token": "",
-                "jvmArguments": [f"-Xmx{int(self.user_config.get('ram', 8192) / 1024)}G"]
-            }
-            cmd = minecraft_launcher_lib.command.get_minecraft_command(f"fabric-loader-{fabric_ver}-{version}", mc_dir, opts)
-
-            # Custom rendering engine overrides
-            custom_env = os.environ.copy()
-            custom_env["PATH"] = self.appdata_dir + os.pathsep + custom_env.get("PATH", "")
-            custom_env["MESA_GL_VERSION_OVERRIDE"] = "4.6"
-            custom_env["MESA_GLSL_VERSION_OVERRIDE"] = "460"
-            custom_env["GALLIUM_DRIVER"] = "d3d12"
-
-            self.play_btn.configure(state="normal", text="🛑 STOP", fg_color="#DC2626", hover_color="#991B1B")
-            self.game_process = subprocess.Popen(cmd, env=custom_env)
+        options = {
+            "username": username,
+            "uuid": str(uuid.uuid4()),
+            "token": "",
+            "jvmArguments": [f"-Xmx{ram_mb}M", f"-Xms{ram_mb}M", "-XX:+UnlockExperimentalVMOptions", "-XX:+UseG1GC"]
+        }
+        
+        try:
+            mc_cmd = minecraft_launcher_lib.command.get_minecraft_command(version, mc_dir, options)
+            self.game_process = subprocess.Popen(mc_cmd)
+            self.after(0, lambda: self.play_btn.configure(text="🛑 KILL PROCESS", fg_color="#EF4444"))
             self.game_process.wait()
-
         except Exception as e:
-            messagebox.showerror("Error", str(e))
+            self.after(0, lambda: messagebox.showerror("Launch Error", str(e)))
         finally:
-            self.play_btn.configure(state="normal", text="▶  PLAY", fg_color=ACCENT_BLUE, hover_color="#1446C9")
+            self.after(0, lambda: self.play_btn.configure(text="▶  PLAY", fg_color=ACCENT_BLUE))
 
 if __name__ == "__main__":
     app = SupersonicClientMaster()
