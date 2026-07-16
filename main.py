@@ -841,5 +841,5 @@ class SupersonicClientMaster(ctk.CTk):
             self.after(0, lambda: self.play_btn.configure(text="▶  PLAY", fg_color=ACCENT_BLUE))
 
 if __name__ == "__main__":
-    app = SupersonicClient()
+    app = SupersonicClientMaster()
     app.mainloop()
