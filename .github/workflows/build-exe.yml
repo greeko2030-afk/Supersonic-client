@@ -37,22 +37,18 @@ jobs:
       - name: Build EXE with Bundled Java and Logo
         run: pyinstaller --noconfirm --onefile --windowed --uac-admin --add-data "jre21;jre21" --add-data "1000084689.png;." --name "Supersonic-Client-Full" main.py
 
-      # NEW FIX: Using standard Windows tools (Chocolatey) to install Inno Setup reliably
+      # Using standard Windows tools (Chocolatey) to install Inno Setup reliably
       - name: Install Inno Setup
         run: choco install innosetup -y
 
-      # NEW FIX: Compile the installer directly using Inno Setup command line
+      # Compile the installer directly using Inno Setup command line
       - name: Compile Inno Setup Installer
         run: iscc setup.iss
 
-      # Upload both the portable client and the installer to GitHub Releases
+      # Upload both the portable client and the installer to GitHub Releases with overwrite enabled
       - name: Automatically Upload to GitHub Releases
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: Supersonic Client Release
-          files: |
-            dist/Supersonic-Client-Full.exe
-            installer_output/Supersonic-Client-Installer.exe
+        run: |
+          gh release create latest --title "Supersonic Client Release" || echo "Release already exists"
+          gh release upload latest dist/Supersonic-Client-Full.exe build/Supersonic-Client-Installer.exe --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
