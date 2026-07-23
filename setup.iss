@@ -1,17 +1,18 @@
+[; Inno Setup Script for Supersonic Client
 [Setup]
-AppName=Supersonic Client
+AppName=MinecraftD3D12Launcher
 AppVersion=1.0.0
-DefaultDirName={autopf}\Supersonic Client
-DefaultGroupName=Supersonic Client
-UninstallDisplayIcon={app}\Supersonic-Client-Full.exe
-Compression=lzma2
-SolidCompression=yes
+DefaultDirName={pf}\MinecraftD3D12Launcher
+DefaultGroupName=MinecraftD3D12Launcher
 OutputDir=installer_output
 OutputBaseFilename=Supersonic-Client-Installer
 
 [Files]
-Source: "dist\Supersonic-Client-Full.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\Supersonic-Client-Full.exe"; DestDir: "{app}"; DestName: "Supersonic.exe"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Supersonic Client"; Filename: "{app}\Supersonic-Client-Full.exe"
-Name: "{autodesktop}\Supersonic Client"; Filename: "{app}\Supersonic-Client-Full.exe"
+Name: "{group}\MinecraftD3D12Launcher"; Filename: "{app}\Supersonic.exe"
+Name: "{commondesktop}\MinecraftD3D12Launcher"; Filename: "{app}\Supersonic.exe"
+
+[Run]
+Filename: "{app}\Supersonic.exe"; Description: "Launch MinecraftD3D12Launcher"; Flags: nowait postinstall skipifsilent
