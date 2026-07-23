@@ -1,0 +1,15 @@
+cmake_minimum_required(VERSION 3.10)
+project(SupersonicEngine)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Output directory for the executable (bin folder)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/../bin)
+
+add_executable(engine engine.cpp)
+
+# Windows specific static linking if required
+if(WIN32)
+    set_target_properties(engine PROPERTIES MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
