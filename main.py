@@ -12,7 +12,13 @@ import customtkinter as ctk
 # ================= CONSTANTS & GLOBALS =================
 VERSION = "1.0.0"
 APP_NAME = "MinecraftD3D12Launcher"
-ENGINE_EXECUTABLE = "bin/engine.exe" if sys.platform == "win32" else "bin/engine"
+
+if getattr(sys, 'frozen', False):
+    base_path = sys._MEIPASS
+else:
+    base_path = os.path.dirname(os.path.abspath(__file__))
+
+ENGINE_EXECUTABLE = os.path.join(base_path, "bin", "engine.exe" if sys.platform == "win32" else "engine")
 
 # THEMES
 BG_COLOR = "#0F172A"
