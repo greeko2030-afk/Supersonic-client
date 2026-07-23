@@ -135,6 +135,55 @@ class SupersonicClient(ctk.CTk):
             else:
                 b.configure(fg_color="transparent", text_color=TEXT_MUTED)
 
+    # ================= GAME LAUNCH ENGINE =================
+    def start_game_launch(self):
+        self.play_btn.configure(state="disabled", text="STARTING ENGINE...")
+        self.launch_progress.set(0)
+        threading.Thread(target=self.game_launch_thread, daemon=True).start()
+
+    def game_launch_thread(self):
+        self.thread_safe_update(self.launch_status, text="Checking for updates...")
+        # Simulate auto-update
+        import time
+        for i in range(1, 11):
+            time.sleep(0.05)
+            self.thread_safe_progress(self.launch_progress, i/10.0)
+            
+        if not os.path.exists(ENGINE_EXECUTABLE):
+            self.thread_safe_update(self.launch_status, text="Engine not found! Please compile C++ first.", text_color="red")
+            self.thread_safe_update(self.play_btn, state="normal", text="▶ PLAY")
+            return
+            
+        self.thread_safe_update(self.launch_status, text="Booting C++ Core Engine...", text_color=TEXT_MUTED)
+        
+        args = [
+            ENGINE_EXECUTABLE,
+            "--version", "1.20.4",
+            "--ram", "4G",
+            "--username", self.account_data["username"],
+            "--backend", "zink"
+        ]
+
+        try:
+            process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            self.thread_safe_update(self.launch_status, text="Game Running via C++ Engine")
+            
+            for line in process.stdout:
+                print(f"[ENGINE]: {line.strip()}")
+                
+            process.wait()
+            self.after(0, self.reset_launch_ui)
+            
+        except Exception as e:
+            print(f"Launch failed:\n{traceback.format_exc()}")
+            self.thread_safe_update(self.launch_status, text="Engine Failed to Start", text_color="red")
+            self.thread_safe_update(self.play_btn, state="normal", text="▶ PLAY")
+
+    def reset_launch_ui(self):
+        self.play_btn.configure(state="normal", text="▶ PLAY")
+        self.launch_status.configure(text=f"Ready", text_color=TEXT_MUTED)
+        self.launch_progress.set(0)
+
 # ================= VIEWS =================
 class HomeView(ctk.CTkFrame):
     def __init__(self, parent, controller):
@@ -238,55 +287,6 @@ class SettingsView(ctk.CTkFrame):
         ram_lbl = ctk.CTkLabel(ram_f, text="8192 MB", font=("Segoe UI", 13, "bold"), width=70)
         ram_lbl.pack(side="right")
         ram_slider.configure(command=lambda v: ram_lbl.configure(text=f"{int(v)} MB"))
-
-    # ================= GAME LAUNCH ENGINE =================
-    def start_game_launch(self):
-        self.play_btn.configure(state="disabled", text="STARTING ENGINE...")
-        self.launch_progress.set(0)
-        threading.Thread(target=self.game_launch_thread, daemon=True).start()
-
-    def game_launch_thread(self):
-        self.thread_safe_update(self.launch_status, text="Checking for updates...")
-        # Simulate auto-update
-        import time
-        for i in range(1, 11):
-            time.sleep(0.05)
-            self.thread_safe_progress(self.launch_progress, i/10.0)
-            
-        if not os.path.exists(ENGINE_EXECUTABLE):
-            self.thread_safe_update(self.launch_status, text="Engine not found! Please compile C++ first.", text_color="red")
-            self.thread_safe_update(self.play_btn, state="normal", text="▶ PLAY")
-            return
-            
-        self.thread_safe_update(self.launch_status, text="Booting C++ Core Engine...", text_color=TEXT_MUTED)
-        
-        args = [
-            ENGINE_EXECUTABLE,
-            "--version", "1.20.4",
-            "--ram", "4G",
-            "--username", self.account_data["username"],
-            "--backend", "zink"
-        ]
-
-        try:
-            process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            self.thread_safe_update(self.launch_status, text="Game Running via C++ Engine")
-            
-            for line in process.stdout:
-                print(f"[ENGINE]: {line.strip()}")
-                
-            process.wait()
-            self.after(0, self.reset_launch_ui)
-            
-        except Exception as e:
-            print(f"Launch failed:\n{traceback.format_exc()}")
-            self.thread_safe_update(self.launch_status, text="Engine Failed to Start", text_color="red")
-            self.thread_safe_update(self.play_btn, state="normal", text="▶ PLAY")
-
-    def reset_launch_ui(self):
-        self.play_btn.configure(state="normal", text="▶ PLAY")
-        self.launch_status.configure(text=f"Ready", text_color=TEXT_MUTED)
-        self.launch_progress.set(0)
 
 if __name__ == "__main__":
     app = SupersonicClient()
