@@ -1,6 +1,5 @@
-[; Inno Setup Script for Supersonic Client
 [Setup]
-AppName=MinecraftD3D12Launcher
+AppName=Supersonic-Client
 AppVersion=1.0.0
 DefaultDirName={pf}\MinecraftD3D12Launcher
 DefaultGroupName=MinecraftD3D12Launcher
