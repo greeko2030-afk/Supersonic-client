@@ -123,6 +123,7 @@ class SupersonicClient(ctk.CTk):
                 hover_color=CARD_HOVER, corner_radius=8, height=45,
                 command=lambda: self.show_frame(frame_name)
             )
+            b.target_frame = frame_name
             b.pack(fill="x", padx=15, pady=2)
             self.nav_btns.append(b)
             
@@ -136,7 +137,7 @@ class SupersonicClient(ctk.CTk):
         frame = self.frames[name]
         frame.tkraise()
         for b in self.nav_btns:
-            if name in b.cget("command"):
+            if getattr(b, "target_frame", "") == name:
                 b.configure(fg_color=CARD_HOVER, text_color=TEXT_MAIN)
             else:
                 b.configure(fg_color="transparent", text_color=TEXT_MUTED)
