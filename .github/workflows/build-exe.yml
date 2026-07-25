@@ -1,19 +1,16 @@
-name: Build Supersonic Client
+name: Build Supersonic Client EXE
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
-    
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -23,40 +20,37 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Pillow is added here to handle the client's logo image rendering
-      - name: Install Dependencies
-        run: pip install pyinstaller minecraft-launcher-lib requests customtkinter pillow
-
-      - name: Download and Extract Portable Java 21
+      - name: Install Python Dependencies
         run: |
-          Invoke-WebRequest -Uri "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.3%2B9/OpenJDK21U-jre_x64_windows_hotspot_21.0.3_9.zip" -OutFile "jre.zip"
-          Expand-Archive -Path "jre.zip" -DestinationPath "jre_extracted"
-          Move-Item -Path "jre_extracted\jdk*" -Destination ".\jre21"
+          python -m pip install --upgrade pip
+          pip install requests customtkinter minecraft-launcher-lib pyinstaller pillow
 
-      - name: Build C++ Engine
+      - name: Configure CMake for C++ Engine
+        run: cmake -B build-engine -S supersonic-engine
+        
+      - name: Build C++ Engine (opengl32.dll)
+        run: cmake --build build-engine --config Release
+
+      # Fix: Creating the correct directory and copying the DLL so PyInstaller finds it
+      - name: Prepare Engine Directory
         run: |
-          mkdir build-engine
-          cd build-engine
-          cmake ..
-          cmake --build . --config Release
+          mkdir -p engine
+          copy build-engine\Release\opengl32.dll engine\opengl32.dll
 
-      # The logo file 1000084689.png and the engine are bundled inside the executable using the --add-data flag
-      - name: Build EXE with Bundled Java, Engine and Logo
-        run: pyinstaller --noconfirm --onefile --windowed --uac-admin --add-data "jre21;jre21" --add-data "1000084689.png;." --add-data "bin/engine.exe;bin" --name "Supersonic-Client-Full" main.py
+      # Fix: Telling PyInstaller the exact correct path to look for the engine data
+      - name: Build Python EXE with PyInstaller
+        run: |
+          pyinstaller --noconfirm --onedir --windowed --name "SupersonicClient" --add-data "engine/opengl32.dll;engine" main.py
 
-      # Using standard Windows tools (Chocolatey) to install Inno Setup reliably
-      - name: Install Inno Setup
-        run: choco install innosetup -y
-
-      # Compile the installer directly using Inno Setup command line
       - name: Compile Inno Setup Installer
-        run: iscc setup.iss
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
+        with:
+          path: Setup.iss
+          options: /O+
 
-      # Upload both the portable client and the installer to GitHub Releases with overwrite enabled
-      - name: Automatically Upload to GitHub Releases
-        shell: bash
-        run: |
-          gh release create latest --title "Supersonic Client Release" || echo "Release already exists"
-          gh release upload latest dist/Supersonic-Client-Full.exe installer_output/Supersonic-Client-Installer.exe --clobber
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload Installer Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Supersonic-Client-Installer
+          path: Output/Supersonic-Client-Installer.exe
+          retention-days: 7
