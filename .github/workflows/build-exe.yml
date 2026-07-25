@@ -15,6 +15,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # This step will list all files in the GitHub Action log so you can debug missing folders
+      - name: Check Directory Structure
+        run: dir
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -25,19 +29,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests customtkinter minecraft-launcher-lib pyinstaller pillow
 
+      # If your CMakeLists.txt is NOT inside "supersonic-engine" folder but in the main root folder, 
+      # change "-S supersonic-engine" to "-S ." in the line below.
       - name: Configure CMake for C++ Engine
         run: cmake -B build-engine -S supersonic-engine
         
       - name: Build C++ Engine (opengl32.dll)
         run: cmake --build build-engine --config Release
 
-      # Fix: Creating the correct directory and copying the DLL so PyInstaller finds it
       - name: Prepare Engine Directory
         run: |
-          mkdir -p engine
+          mkdir engine
           copy build-engine\Release\opengl32.dll engine\opengl32.dll
 
-      # Fix: Telling PyInstaller the exact correct path to look for the engine data
       - name: Build Python EXE with PyInstaller
         run: |
           pyinstaller --noconfirm --onedir --windowed --name "SupersonicClient" --add-data "engine/opengl32.dll;engine" main.py
