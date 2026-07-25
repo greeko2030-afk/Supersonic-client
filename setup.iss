@@ -3,15 +3,15 @@
 
 #define MyAppName "Supersonic-Client"
 #define MyAppVersion "2.5.0"
-#define MyAppPublisher "Supersonic Devs"
-#define MyAppURL "http://www.NarratorMC.net"
+#define MyAppPublisher "GreekoASC"
+#define MyAppURL "Supersonic-Client--Greeko2030.replit.app"
 #define MyAppExeName "SupersonicClient.exe"
 
 [Setup]
 ; App Information
 AppId={{8A2B6F9E-3D4C-41A5-B890-ABCDEF123456}
 AppName={#Supersonic-Client}
-AppVersion={#1.2.3)
+AppVersion={#2.5.0)
 AppPublisher={#GreekoASC}
 AppPublisherURL={#Supersonic-Client--Greeko2030.replit.app)
 AppSupportURL={#Supersonic-Client--Greeko2030.replit.app}
