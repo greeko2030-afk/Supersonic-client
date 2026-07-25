@@ -4,29 +4,37 @@
 #define MyAppName "Supersonic-Client"
 #define MyAppVersion "2.5.0"
 #define MyAppPublisher "GreekoASC"
-#define MyAppURL "Supersonic-Client--Greeko2030.replit.app"
+#define MyAppURL "https://Supersonic-Client--Greeko2030.replit.app"
 #define MyAppExeName "SupersonicClient.exe"
 
 [Setup]
 ; App Information
 AppId={{8A2B6F9E-3D4C-41A5-B890-ABCDEF123456}
-AppName="{#MyAppName}"
-AppVersion="{#MyAppVersion}"
-AppPublisher="{#MyAppPublisher}"
-AppPublisherURL="{#MyAppURL}"
-AppSupportURL="{#MyAppURL}"
-AppUpdatesURL="{#MyAppURL}"
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
+AppPublisher={#MyAppPublisher}
+AppPublisherURL={#MyAppURL}
+AppSupportURL={#MyAppURL}
+AppUpdatesURL={#MyAppURL}
 
 ; Installation Directory
-DefaultDirName="{autopf}\{#MyAppName}"
+DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
 
 ; Output Configuration
-OutputDir="Output"
-OutputBaseFilename="Supersonic-Client-Installer"
-Compression="lzma2/ultra64"
+OutputDir=Output
+; Added version to the output installer name for GitHub Releases
+OutputBaseFilename=Supersonic-Client-{#MyAppVersion}-Installer
+Compression=lzma2/ultra64
 SolidCompression=yes
-WizardStyle="modern"
+WizardStyle=modern
+
+; Additional Professional Settings
+UninstallDisplayIcon={app}\{#MyAppExeName}
+PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
+; Uncomment the line below if you have a custom icon for the installer itself
+; SetupIconFile=1000084689.ico
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
