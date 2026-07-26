@@ -35,9 +35,8 @@ jobs:
         run: cmake --build build-engine --config Release
 
       - name: Prepare Engine Directory
-        run: |
-          mkdir engine
-          copy build-engine\Release\opengl32.dll engine\opengl32.dll
+        run: mkdir -p engine
+        shell: bash
 
       - name: Build Python EXE (One-Dir for Installer)
         run: |
