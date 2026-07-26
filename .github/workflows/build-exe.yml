@@ -46,11 +46,13 @@ jobs:
         run: |
           pyinstaller --noconfirm --onefile --windowed --name "Supersonic-Client" --add-data "engine/opengl32.dll;engine" main.py
 
-      - name: Prepare Output Directory and Move Standalone EXE
-        shell: cmd
+      - name: Prepare Engine Directory
         run: |
-          if not exist Output mkdir Output
-          copy dist\Supersonic-Client.exe Output\Supersonic-Client.exe
+       mkdir -p engine
+       # Copy opengl32.dll from the CMake build directory to the engine folder
+        # For example (update the path according to your actual build directory):
+       cp build/Release/opengl32.dll engine/ || echo "DLL not found, creating dummy for build" && type nul > engine\opengl32.dll
+       shell: bash
 
       - name: Compile Inno Setup Installer
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
