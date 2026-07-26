@@ -52,7 +52,7 @@ jobs:
        # Copy opengl32.dll from the CMake build directory to the engine folder
         # For example (update the path according to your actual build directory):
        cp build/Release/opengl32.dll engine/ || echo "DLL not found, creating dummy for build" && type nul > engine\opengl32.dll
-       shell: bash
+      - shell: bash
 
       - name: Compile Inno Setup Installer
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
