@@ -4,7 +4,7 @@
 
 ## 🚀 About
 
-Greeko Advanced Systems Corporation (Greeko ASC) is a technology-focused development company working on innovative software, artificial intelligence, game development, graphics technologies, and performance optimization.
+Greeko Advanced Systems Corporation (Greeko ASC) is a technology-focused development company working on innovative software, artificial intelligence, game development, graphics technologies, and performance optimization,it's a non published company.
 
 Our goal is to create powerful, modern, lightweight, and user-friendly products for everyone.
 
