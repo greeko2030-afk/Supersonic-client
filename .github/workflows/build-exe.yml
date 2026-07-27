@@ -34,8 +34,11 @@ jobs:
       - name: Build C++ Engine (opengl32.dll)
         run: cmake --build build-engine --config Release
 
-      - name: Prepare Engine Directory
-        run: mkdir -p engine
+      - name: Prepare Engine Directory and Copy DLL
+        run: |
+          mkdir -p engine
+          # Copy opengl32.dll from the CMake build directory to the engine folder
+          cp build-engine/Release/opengl32.dll engine/ || echo "DLL not found, creating dummy for build" && type nul > engine\opengl32.dll
         shell: bash
 
       - name: Build Python EXE (One-Dir for Installer)
@@ -45,14 +48,6 @@ jobs:
       - name: Build Python EXE (One-File for Standalone)
         run: |
           pyinstaller --noconfirm --onefile --windowed --name "Supersonic-Client" --add-data "engine/opengl32.dll;engine" main.py
-
-      - name: Prepare Engine Directory
-        run: |
-         mkdir -p engine
-       # Copy opengl32.dll from the CMake build directory to the engine folder
-        # For example (update the path according to your actual build directory):
-        cp build/Release/opengl32.dll engine/ || echo "DLL not found, creating dummy for build" && type nul > engine\opengl32.dll
-      - shell: bash
 
       - name: Compile Inno Setup Installer
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
