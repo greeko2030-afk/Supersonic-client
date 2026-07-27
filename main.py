@@ -7,6 +7,23 @@ import requests
 import customtkinter as ctk
 import minecraft_launcher_lib
 
+# --- D3D12 / Mesa Environment Configuration ---
+# Resolve Base Directory to find the engine folder
+if getattr(sys, 'frozen', False):
+    base_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+else:
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+engine_dir = os.path.join(base_dir, "engine")
+
+# CRUCIAL: Add engine directory to Windows DLL search path so OpenGL can find other Mesa DLLs
+os.environ["PATH"] = engine_dir + os.pathsep + os.environ.get("PATH", "")
+
+# Force Mesa3D to use Microsoft Direct3D 12 (Dozen) driver
+os.environ["GALLIUM_DRIVER"] = "d3d12"
+os.environ["MESA_GL_VERSION_OVERRIDE"] = "4.6"
+os.environ["MESA_GLSL_VERSION_OVERRIDE"] = "460"
+
 # --- Configuration & Theme ---
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -139,21 +156,18 @@ class SupersonicClient(ctk.CTk):
 
     def check_for_updates(self):
         try:
-            # Assuming your replit returns JSON: {"version": "2.6.0", "url": "..."}
             response = requests.get(UPDATE_URL, timeout=5)
             if response.status_code == 200:
                 data = response.json()
                 if data.get("version") != CURRENT_VERSION:
                     self.status_label.configure(text="Update Available!", text_color="orange")
             else:
-                pass # Web is offline or not configured yet
+                pass 
         except Exception:
             self.status_label.configure(text="Update Server Offline", text_color="gray")
 
     def microsoft_login(self):
-        # Placeholder for MSAL integration. minecraft_launcher_lib has built-in functions for this.
         self.status_label.configure(text="Microsoft Auth Opening...", text_color="yellow")
-        # For real implementation, you will use minecraft_launcher_lib.microsoft_account
 
     def search_modrinth(self):
         query = self.mod_search_entry.get()
@@ -183,13 +197,8 @@ class SupersonicClient(ctk.CTk):
         version = self.version_entry.get()
         username = self.username_entry.get() or "Player"
 
-        # Resolve D3D12 Engine DLL Path
-        if getattr(sys, 'frozen', False):
-            base_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
-        else:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            
-        engine_path = os.path.join(base_dir, "engine", "opengl32.dll")
+        # Resolve Engine Path
+        engine_path = os.path.join(engine_dir, "opengl32.dll")
 
         # Setup Launch Options
         options = {
