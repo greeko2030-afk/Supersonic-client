@@ -1,19 +1,12 @@
 cmake_minimum_required(VERSION 3.15)
-project(SupersonicEngine C CXX)
+project(SupersonicEngine CXX)
 
-# Require C++17 standard
+# Set C++ Standard
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-# Compile as a Shared Library (DLL) named opengl32
-add_library(opengl32 SHARED
-    src/dllmain.cpp
-    src/d3d12_hook.cpp
-)
+# Create a shared library named 'opengl32'
+add_library(opengl32 SHARED src/dllmain.cpp)
 
-# Link Windows libraries needed for D3D12 and DXGI
-target_link_libraries(opengl32
-    d3d12.lib
-    dxgi.lib
-    user32.lib
-)
+# Link Windows libraries required for Direct3D 12 and OpenGL Proxy
+target_link_libraries(opengl32 PRIVATE d3d12 dxgi user32 gdi32)
