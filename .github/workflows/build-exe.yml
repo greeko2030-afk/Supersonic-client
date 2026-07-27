@@ -38,7 +38,8 @@ jobs:
         run: |
           mkdir -p engine
           # Copy opengl32.dll from the CMake build directory to the engine folder
-          cp build-engine/Release/opengl32.dll engine/ || echo "DLL not found, creating dummy for build" && type nul > engine\opengl32.dll
+          # Using Bash 'touch' command to create a dummy file if the DLL is missing
+          cp build-engine/Release/opengl32.dll engine/ || { echo "DLL not found, creating dummy for build"; touch engine/opengl32.dll; }
         shell: bash
 
       - name: Build Python EXE (One-Dir for Installer)
