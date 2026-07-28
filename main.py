@@ -30,7 +30,7 @@ class SupersonicEngine:
             "java_version": "Java 21",
             "cloud_sync": True,
             "auto_update": True,
-            "username": "Raffiee_playssMC",
+            "username": "<username>",
             "uuid": str(uuid.uuid4()),
             "ms_token": None
         }
