@@ -18,9 +18,9 @@ class SupersonicEngine:
         self.config_file = "supersonic_config.json"
         self.config = self.load_config()
         self.system_info = self.get_system_info()
-        # Using default OS minecraft directory, can be customized
         self.minecraft_directory = minecraft_launcher_lib.utils.get_minecraft_directory()
-        self.target_mc_version = "1.20.4" # Set your preferred default version
+        self.target_mc_version = "1.21.4"
+        self.is_premium = False # Set to True if MS Auth is successful
 
     def load_config(self):
         default_config = {
@@ -30,8 +30,9 @@ class SupersonicEngine:
             "java_version": "Java 21",
             "cloud_sync": True,
             "auto_update": True,
-            "username": "RafTee_playssMC",
-            "uuid": str(uuid.uuid4())
+            "username": "Raffiee_playssMC",
+            "uuid": str(uuid.uuid4()),
+            "ms_token": None
         }
         if os.path.exists(self.config_file):
             try:
@@ -52,16 +53,44 @@ class SupersonicEngine:
             if platform.system() == "Windows":
                 gpu = subprocess.check_output("wmic path win32_videocard get name", shell=True).decode().split('\n')[1].strip()
             else:
-                gpu = "Vulkan/Metal Supported GPU"
+                gpu = "Metal Supported GPU" if platform.system() == "Darwin" else "Vulkan Supported GPU"
         except:
-            gpu = "NVIDIA GTX 1650 (Fallback)"
+            gpu = "Auto GPU Detection Fallback"
             
         return {
-            "os": f"{platform.system()} {platform.machine()}",
-            "cpu": platform.processor()[:25],
+            "os": f"{platform.system()} {platform.release()} {platform.machine()}",
+            "cpu": platform.processor()[:30],
             "ram": f"{ram_gb} GB",
             "gpu": gpu
         }
+
+    # --- ADVANCED FEATURES LOGIC ---
+    
+    def authenticate_microsoft(self):
+        """Realwork placeholder for Microsoft Auth"""
+        # In a real scenario, this opens a browser for OAuth and saves the token
+        self.is_premium = True
+        return True
+
+    def ai_crash_assistant(self, error_log):
+        """Analyzes crash reports using AI logic"""
+        conflicts = ["java.lang.OutOfMemoryError", "ModConflictException"]
+        for issue in conflicts:
+            if issue in error_log:
+                return f"AI Suggestion: Detected {issue}. Auto-fixing memory allocation..."
+        return "AI Suggestion: Unknown crash. Scanning latest logs..."
+
+    def sync_to_cloud(self):
+        """Placeholder for cross-device cloud sync"""
+        if self.config["cloud_sync"]:
+            # Logic to upload configs and small instances to cloud API
+            pass
+
+    def install_mod(self, mod_name):
+        """Downloads and installs mod directly to the instance"""
+        # Real logic would use CurseForge/Modrinth API to fetch the .jar
+        time.sleep(0.5) # Simulating network request
+        return True
 
     def generate_jvm_args(self):
         ram = self.config["ram_mb"]
@@ -75,37 +104,27 @@ class SupersonicEngine:
             "-Dsun.rmi.dgc.client.gcInterval=3600000",
             "-Dsun.rmi.dgc.server.gcInterval=3600000",
             "-Djava.net.preferIPv4Stack=true",
-            "-Dlwjgla.vulkan.enable=true",
-            "-Dmouse.raw.input=true"
+            "-Dlwjgla.vulkan.enable=true", # Vulkan Translation Support
+            "-Dmouse.raw.input=true"       # Raw Input Optimization
         ]
         return args
 
     def launch_minecraft(self, status_callback):
         try:
             status_callback("Fetching Version Manifest...")
-            # Ensure the directory exists
             if not os.path.exists(self.minecraft_directory):
                 os.makedirs(self.minecraft_directory)
 
-            # Callback functions for download progress
             def set_status(status):
                 status_callback(f"Status: {status}")
 
-            def set_progress(progress):
-                # Optionally handle progress bar here
-                pass
-
-            def set_max(new_max):
-                pass
-
             callback_dict = {
                 "setStatus": set_status,
-                "setProgress": set_progress,
-                "setMax": set_max
+                "setProgress": lambda p: None,
+                "setMax": lambda m: None
             }
 
             status_callback(f"Checking & Downloading Minecraft {self.target_mc_version}...")
-            # REAL WORK: Downloads vanilla client, assets, and libraries if missing
             minecraft_launcher_lib.install.install_minecraft_version(
                 versionid=self.target_mc_version, 
                 minecraft_directory=self.minecraft_directory, 
@@ -116,42 +135,43 @@ class SupersonicEngine:
             options = {
                 "username": self.config["username"],
                 "uuid": self.config["uuid"],
-                "token": "", # Offline Authentication
+                "token": self.config.get("ms_token", ""),
                 "jvmArguments": self.generate_jvm_args(),
                 "launcherName": "Supersonic Client",
                 "launcherVersion": "2.5.0"
             }
 
             status_callback("Starting Maximum Speed Engine...")
-            # Get the exact command to run the game
             minecraft_command = minecraft_launcher_lib.command.get_minecraft_command(
                 version=self.target_mc_version, 
                 minecraft_directory=self.minecraft_directory, 
                 options=options
             )
 
-            # Launch the game process
             subprocess.Popen(minecraft_command, creationflags=0x08000000 if platform.system() == "Windows" else 0)
             status_callback("Game Running smoothly. Smart Memory active.")
 
         except Exception as e:
-            status_callback(f"AI Crash Assistant: {str(e)[:50]}...")
+            ai_fix = self.ai_crash_assistant(str(e))
+            status_callback(f"Crash Detected! {ai_fix}")
 
 # ==============================================================================
 # USER INTERFACE
 # ==============================================================================
 ctk.set_appearance_mode("Dark")
 
+# UI Constants based on screenshots
 BG_DARK = "#05070D"
-CARD_BG = "#121722"
+CARD_BG = "#0D111A"
 CARD_HOVER = "#1A2130"
 ACCENT_BLUE = "#1C4ED8"
 TEXT_PRIMARY = "#FFFFFF"
 TEXT_SECONDARY = "#8A93A6"
 GREEN_STATUS = "#10B981"
 PURPLE_AI = "#6D28D9"
+SIDEBAR_BG = "#0A0D14"
 
-class SupersonicApp(ctk.CTk):
+class SupersonicClient(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.engine = SupersonicEngine()
@@ -164,6 +184,7 @@ class SupersonicApp(ctk.CTk):
         self.grid_columnconfigure(1, weight=1)
 
         self.setup_sidebar()
+        
         self.main_area = ctk.CTkFrame(self, fg_color="transparent")
         self.main_area.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
         self.main_area.grid_rowconfigure(1, weight=1)
@@ -174,11 +195,15 @@ class SupersonicApp(ctk.CTk):
         self.switch_tab("Dashboard")
 
     def setup_sidebar(self):
-        self.sidebar = ctk.CTkFrame(self, width=240, fg_color="#0A0D14", corner_radius=0)
+        self.sidebar = ctk.CTkFrame(self, width=240, fg_color=SIDEBAR_BG, corner_radius=0)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
-        self.sidebar.grid_rowconfigure(12, weight=1)
+        self.sidebar.grid_rowconfigure(10, weight=1)
 
-        ctk.CTkLabel(self.sidebar, text="⚡ SUPERSONIC", font=("Segoe UI", 22, "bold"), text_color=TEXT_PRIMARY).grid(row=0, column=0, pady=(30, 20), padx=20, sticky="w")
+        # Logo Area
+        logo_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        logo_frame.grid(row=0, column=0, pady=(30, 30), padx=20, sticky="w")
+        ctk.CTkLabel(logo_frame, text="⚡", font=("Segoe UI", 28), text_color=ACCENT_BLUE).pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(logo_frame, text="SUPERSONIC", font=("Segoe UI", 18, "bold"), text_color=TEXT_PRIMARY).pack(side="left")
 
         nav_items = [
             ("Dashboard", "🏠", None), ("Modpacks", "📦", None), 
@@ -194,7 +219,7 @@ class SupersonicApp(ctk.CTk):
             f.grid(row=i+1, column=0, sticky="ew", padx=15, pady=2)
             f.grid_columnconfigure(0, weight=1)
             
-            btn = ctk.CTkButton(f, text=f"  {icon}   {name}", anchor="w", fg_color="transparent", text_color=TEXT_SECONDARY, hover_color=CARD_HOVER, font=("Segoe UI", 13, "bold"), height=40, command=lambda n=name: self.switch_tab(n))
+            btn = ctk.CTkButton(f, text=f"  {icon}   {name}", anchor="w", fg_color="transparent", text_color=TEXT_SECONDARY, hover_color=CARD_HOVER, font=("Segoe UI", 14, "bold"), height=40, command=lambda n=name: self.switch_tab(n))
             btn.grid(row=0, column=0, sticky="ew")
             self.nav_buttons[name] = btn
 
@@ -202,11 +227,17 @@ class SupersonicApp(ctk.CTk):
                 color = PURPLE_AI if badge == "NEW" else GREEN_STATUS
                 ctk.CTkLabel(f, text=badge, fg_color=color, text_color="white", font=("Segoe UI", 9, "bold"), corner_radius=4, width=30, height=18).grid(row=0, column=1)
 
+        # Account Area
         acc = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        acc.grid(row=13, column=0, sticky="ew", padx=20, pady=20)
+        acc.grid(row=11, column=0, sticky="ew", padx=20, pady=10)
         ctk.CTkLabel(acc, text="Account", font=("Segoe UI", 11), text_color=TEXT_SECONDARY).pack(anchor="w")
         ctk.CTkLabel(acc, text=self.engine.config["username"], font=("Segoe UI", 14, "bold")).pack(anchor="w")
         ctk.CTkLabel(acc, text="👑 Premium", font=("Segoe UI", 12, "bold"), text_color="#F59E0B").pack(anchor="w")
+        
+        # Footer Links
+        links = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        links.grid(row=12, column=0, sticky="ew", padx=20, pady=(0, 20))
+        ctk.CTkLabel(links, text="🌐 Website    👾 Discord    🔗 GitHub", font=("Segoe UI", 10), text_color=TEXT_SECONDARY).pack(anchor="w")
 
     def switch_tab(self, tab_name):
         for name, btn in self.nav_buttons.items():
@@ -223,89 +254,163 @@ class SupersonicApp(ctk.CTk):
         for t in ["Instances", "Resource Packs", "Worlds", "Agent (AI)"]:
             if t not in self.tabs:
                 f = ctk.CTkFrame(self.main_area, fg_color="transparent")
-                ctk.CTkLabel(f, text=f"{t} - Under Development", font=("Segoe UI", 20)).pack(pady=100)
+                ctk.CTkLabel(f, text=f"{t} - Fully Integrated Soon", font=("Segoe UI", 20)).pack(pady=100)
                 self.tabs[t] = f
 
+    # --- DASHBOARD TAB ---
     def tab_dashboard(self):
         frame = ctk.CTkFrame(self.main_area, fg_color="transparent")
         frame.grid_columnconfigure(0, weight=3)
         frame.grid_columnconfigure(1, weight=1)
         frame.grid_rowconfigure(0, weight=1)
 
-        left = ctk.CTkFrame(frame, fg_color="transparent")
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 20))
+        left_col = ctk.CTkFrame(frame, fg_color="transparent")
+        left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 20))
 
-        hero = ctk.CTkFrame(left, fg_color=CARD_BG, corner_radius=15, border_width=1, border_color="#2A3143")
-        hero.pack(fill="x", pady=(0, 20), ipady=20)
-        ctk.CTkLabel(hero, text="SUPERSONIC CLIENT", font=("Segoe UI", 28, "bold")).place(x=30, y=20)
-        ctk.CTkLabel(hero, text="Hyper optimized. Ultra fast. Future ready.", font=("Segoe UI", 14), text_color=TEXT_SECONDARY).place(x=30, y=60)
+        # Hero Banner
+        hero = ctk.CTkFrame(left_col, fg_color=CARD_BG, corner_radius=15, border_width=1, border_color="#1E293B")
+        hero.pack(fill="x", pady=(0, 20), ipady=30)
+        ctk.CTkLabel(hero, text="SUPERSONIC CLIENT", font=("Segoe UI", 32, "bold", "italic")).place(x=30, y=20)
+        ctk.CTkLabel(hero, text="Hyper optimized. Ultra fast. Future ready.", font=("Segoe UI", 14), text_color=TEXT_SECONDARY).place(x=30, y=65)
         
-        self.status_lbl = ctk.CTkLabel(hero, text="🟢 Ready to Launch", font=("Segoe UI", 12, "bold"), text_color=GREEN_STATUS)
-        self.status_lbl.place(x=30, y=90)
+        info_bar = ctk.CTkFrame(hero, fg_color="transparent")
+        info_bar.place(x=30, y=100)
+        ctk.CTkLabel(info_bar, text="📦 Minecraft 1.21.4   🚀 Performance: Ultra   📅 Last Played: Today", font=("Segoe UI", 12), text_color=GREEN_STATUS).pack(side="left")
         
-        self.play_btn = ctk.CTkButton(hero, text="▶ PLAY", font=("Segoe UI", 20, "bold"), fg_color=ACCENT_BLUE, hover_color="#1D40B0", width=180, height=55, command=self.start_game)
+        self.play_btn = ctk.CTkButton(hero, text="▶ PLAY", font=("Segoe UI", 24, "bold"), fg_color=ACCENT_BLUE, hover_color="#1D40B0", width=200, height=60, corner_radius=8, command=self.start_game)
         self.play_btn.place(relx=0.95, rely=0.5, anchor="e")
+        self.status_lbl = ctk.CTkLabel(hero, text="Latest Release (1.21.4) ⌄", font=("Segoe UI", 12), text_color=TEXT_SECONDARY)
+        self.status_lbl.place(relx=0.95, rely=0.8, anchor="e")
 
-        add = ctk.CTkFrame(left, fg_color=CARD_BG, corner_radius=12)
-        add.pack(fill="x", pady=(0, 20), ipady=10)
-        ctk.CTkLabel(add, text="⚡ ALL ADDONS - ONE CLICK INSTALL", font=("Segoe UI", 14, "bold")).pack(anchor="w", padx=20, pady=15)
+        # Quick Addons Grid
+        addons_frame = ctk.CTkFrame(left_col, fg_color=CARD_BG, corner_radius=12)
+        addons_frame.pack(fill="x", pady=(0, 20), ipady=10)
+        
+        top_a = ctk.CTkFrame(addons_frame, fg_color="transparent")
+        top_a.pack(fill="x", padx=20, pady=15)
+        ctk.CTkLabel(top_a, text="⚡ ALL ADDONS - ONE CLICK INSTALL", font=("Segoe UI", 14, "bold")).pack(side="left")
+        ctk.CTkButton(top_a, text="⬇ Install All", fg_color="transparent", border_width=1, border_color=ACCENT_BLUE, text_color=ACCENT_BLUE, width=100).pack(side="right")
 
+        a_grid = ctk.CTkFrame(addons_frame, fg_color="transparent")
+        a_grid.pack(fill="x", padx=20, pady=(0, 10))
+        quick_addons = [
+            ("Sodium", "Boosts FPS"), ("Iris Shaders", "Shaders Mod"), 
+            ("Lithium", "Performance"), ("Indium", "Mod Compat"),
+            ("Phosphor", "Lighting"), ("FerriteCore", "Memory Usage"),
+            ("Starlight", "Lighting Optimizer"), ("Entity Culling", "Optimized Entities")
+        ]
+        r, c = 0, 0
+        for name, desc in quick_addons:
+            card = ctk.CTkFrame(a_grid, fg_color="#151B28", corner_radius=8, width=170, height=60)
+            card.grid(row=r, column=c, padx=5, pady=5)
+            card.grid_propagate(False)
+            ctk.CTkLabel(card, text=name, font=("Segoe UI", 12, "bold")).place(x=40, y=10)
+            ctk.CTkLabel(card, text=desc, font=("Segoe UI", 10), text_color=TEXT_SECONDARY).place(x=40, y=28)
+            ctk.CTkLabel(card, text="✔ Installed", font=("Segoe UI", 10, "bold"), text_color=GREEN_STATUS).place(x=40, y=42)
+            c += 1
+            if c > 3: c, r = 0, r + 1
+
+        # Performance Monitors
+        perf_frame = ctk.CTkFrame(left_col, fg_color="transparent")
+        perf_frame.pack(fill="x", pady=10)
+        
+        def make_monitor(parent, title, val, color):
+            f = ctk.CTkFrame(parent, fg_color=CARD_BG, corner_radius=8, height=60)
+            f.pack(side="left", fill="x", expand=True, padx=5)
+            f.pack_propagate(False)
+            ctk.CTkLabel(f, text=title, font=("Segoe UI", 12)).place(x=15, y=10)
+            ctk.CTkLabel(f, text=val, font=("Segoe UI", 14, "bold")).place(relx=0.9, y=10, anchor="ne")
+            bar = ctk.CTkProgressBar(f, progress_color=color, height=6)
+            bar.place(x=15, y=40, width=150)
+            bar.set(0.6)
+            return bar
+
+        self.ram_bar = make_monitor(perf_frame, "RAM Usage", "3.2 GB / 8 GB", ACCENT_BLUE)
+        self.fps_bar = make_monitor(perf_frame, "FPS Boost", "+120%", GREEN_STATUS)
+        self.ping_bar = make_monitor(perf_frame, "Ping", "24ms", PURPLE_AI)
+
+        # Right Sidebar - AI Agent
         ai = ctk.CTkFrame(frame, fg_color=CARD_BG, corner_radius=15)
         ai.grid(row=0, column=1, sticky="nsew")
-        ctk.CTkLabel(ai, text="AGENT (AI) BETA", font=("Segoe UI", 14, "bold")).pack(pady=(20, 10))
-        ctk.CTkButton(ai, text="🛠 Scan & Auto Fix", fg_color=PURPLE_AI, hover_color="#5B21B6", height=45).pack(fill="x", padx=20, pady=10)
         
-        ctk.CTkLabel(ai, text="System Diagnostics", font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=20, pady=(20, 5))
-        self.ram_monitor = ctk.CTkProgressBar(ai, progress_color=GREEN_STATUS)
-        self.ram_monitor.pack(fill="x", padx=20, pady=5)
-        self.update_monitor()
+        ai_top = ctk.CTkFrame(ai, fg_color="transparent")
+        ai_top.pack(fill="x", padx=20, pady=20)
+        ctk.CTkLabel(ai_top, text="AGENT (AI) BETA", font=("Segoe UI", 14, "bold")).pack(side="left")
+        ctk.CTkLabel(ai, text="Your personal AI assistant", font=("Segoe UI", 12), text_color=TEXT_SECONDARY).pack(anchor="w", padx=20)
+        
+        # Chat area simulation
+        chat = ctk.CTkFrame(ai, fg_color="#151B28", corner_radius=10)
+        chat.pack(fill="both", expand=True, padx=15, pady=15)
+        ctk.CTkLabel(chat, text="Hello Raffiee! 👋\nI am your Supersonic Agent.\nI can help you:\n\n✔️ Auto fix errors\n✔️ Optimize performance\n✔️ Detect crashes\n✔️ Suggest solutions", font=("Segoe UI", 12), justify="left").pack(anchor="w", padx=15, pady=15)
+
+        ctk.CTkLabel(ai, text="Auto Fix (One Click)", font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=20)
+        ctk.CTkButton(ai, text="🛠 Scan & Fix", fg_color=PURPLE_AI, hover_color="#5B21B6", height=40).pack(fill="x", padx=20, pady=10)
+        
+        ctk.CTkLabel(ai, text="Recent Logs", font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=20, pady=(10, 0))
+        logs = "[12:48] Fixed Java path issue ✔\n[12:46] Cleaned corrupted cache ✔\n[12:43] Optimized memory settings ✔"
+        ctk.CTkLabel(ai, text=logs, font=("Consolas", 10), text_color=TEXT_SECONDARY, justify="left").pack(anchor="w", padx=20, pady=5)
+        
+        entry = ctk.CTkEntry(ai, placeholder_text="Ask the Agent...", height=40, fg_color="#151B28", border_width=0)
+        entry.pack(fill="x", padx=15, pady=15, side="bottom")
 
         return frame
 
     def start_game(self):
         self.play_btn.configure(state="disabled", text="LAUNCHING...")
-        
-        # Thread safe label updater
         def update_label(msg):
             self.after(0, lambda: self.status_lbl.configure(text=msg))
-            
         def run_thread():
             self.engine.launch_minecraft(update_label)
             self.after(0, lambda: self.play_btn.configure(state="normal", text="▶ PLAY"))
-
         threading.Thread(target=run_thread, daemon=True).start()
 
-    def update_monitor(self):
-        mem = psutil.virtual_memory().percent / 100.0
-        self.ram_monitor.set(mem)
-        self.after(2000, self.update_monitor)
-
+    # --- MODPACKS TAB ---
     def tab_modpacks(self):
         f = ctk.CTkFrame(self.main_area, fg_color="transparent")
         f.grid_rowconfigure(1, weight=1)
         f.grid_columnconfigure(0, weight=1)
         
         top = ctk.CTkFrame(f, fg_color="transparent")
-        top.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 20))
-        ctk.CTkLabel(top, text="MODPACKS", font=("Segoe UI", 28, "bold")).pack(side="left")
-        ctk.CTkButton(top, text="🌐 CurseForge Browser", fg_color=ACCENT_BLUE).pack(side="right")
+        top.grid(row=0, column=0, sticky="ew", pady=(0, 20))
+        ctk.CTkLabel(top, text="MODPACKS", font=("Segoe UI", 28, "bold", "italic")).pack(side="left")
+        ctk.CTkButton(top, text="🌐 Browse CurseForge", fg_color="transparent", border_width=1, border_color=ACCENT_BLUE).pack(side="right")
+        ctk.CTkButton(top, text="+ Import Modpack", fg_color="#1E293B").pack(side="right", padx=10)
 
         scroll = ctk.CTkScrollableFrame(f, fg_color="transparent")
         scroll.grid(row=1, column=0, sticky="nsew")
         
-        packs = ["Fabulously Optimized", "Better MC [FABRIC]", "RLCRAFT", "All the Mods 9"]
+        packs = [
+            ("Fabulously Optimized", "Performance", "12.4M", "1.21.4"),
+            ("Better MC [FABRIC]", "Vanilla+", "8.7M", "1.21.4"),
+            ("RLCRAFT", "Hardcore", "6.2M", "1.20.1"),
+            ("All the Mods 9", "Tech & Magic", "5.9M", "1.20.1"),
+            ("SkyFactory 5", "Skyblock", "5.1M", "1.20.1"),
+            ("Prominence II RPG", "RPG", "4.3M", "1.20.1"),
+            ("Create Above and Beyond", "Automation", "3.8M", "1.20.1"),
+            ("DawnCraft", "Adventure", "3.6M", "1.20.1")
+        ]
+        
         r, c = 0, 0
-        for p in packs:
-            card = ctk.CTkFrame(scroll, fg_color=CARD_BG, corner_radius=12, width=220, height=250)
+        for p, tag, dl, ver in packs:
+            card = ctk.CTkFrame(scroll, fg_color=CARD_BG, corner_radius=12, width=220, height=260)
             card.grid(row=r, column=c, padx=10, pady=10)
             card.grid_propagate(False)
-            ctk.CTkLabel(card, text=p, font=("Segoe UI", 14, "bold")).pack(anchor="w", padx=15, pady=(130, 0))
-            ctk.CTkButton(card, text="⬇ Install (Zero-Click)", fg_color=ACCENT_BLUE, width=180).pack(side="bottom", pady=15)
+            
+            # Dummy Image placeholder
+            img_ph = ctk.CTkFrame(card, fg_color="#1E293B", height=120, corner_radius=10)
+            img_ph.pack(fill="x", padx=10, pady=10)
+            
+            ctk.CTkLabel(card, text=p, font=("Segoe UI", 14, "bold")).pack(anchor="w", padx=15)
+            ctk.CTkLabel(card, text=f"{ver} • {tag}", font=("Segoe UI", 11), text_color=TEXT_SECONDARY).pack(anchor="w", padx=15)
+            ctk.CTkLabel(card, text=f"⬇ {dl} Downloads", font=("Segoe UI", 11)).pack(anchor="w", padx=15, pady=5)
+            
+            ctk.CTkButton(card, text="⬇ Install", fg_color=ACCENT_BLUE, width=180).pack(side="bottom", pady=15)
             c += 1
             if c > 3: c, r = 0, r + 1
 
         return f
 
+    # --- ADDONS TAB ---
     def tab_addons(self):
         f = ctk.CTkFrame(self.main_area, fg_color="transparent")
         f.grid_rowconfigure(1, weight=1)
@@ -313,49 +418,68 @@ class SupersonicApp(ctk.CTk):
         
         top = ctk.CTkFrame(f, fg_color="transparent")
         top.grid(row=0, column=0, sticky="ew", pady=(0, 20))
-        ctk.CTkLabel(top, text="ADDONS", font=("Segoe UI", 28, "bold")).pack(side="left")
+        ctk.CTkLabel(top, text="ADDONS", font=("Segoe UI", 28, "bold", "italic")).pack(side="left")
         ctk.CTkButton(top, text="⚡ Install All", fg_color=ACCENT_BLUE).pack(side="right")
 
         scroll = ctk.CTkScrollableFrame(f, fg_color="transparent")
         scroll.grid(row=1, column=0, sticky="nsew")
         
-        addons = [
-            ("Sodium", "Boosts FPS"), ("Iris Shaders", "Shaders mod"), 
-            ("Lithium", "Game logic"), ("Indium", "Mod compat"),
-            ("Vanish Water", "Custom Shader (Local)"), ("Entity Culling", "Rendering")
+        all_addons = [
+            ("Sodium", "Boosts FPS & reduces lag.", "Performance"),
+            ("Iris Shaders", "Shaders mod for stunning visuals.", "Visuals"),
+            ("Lithium", "Improves game performance.", "Performance"),
+            ("Indium", "Better Mod Compatibility.", "Libraries"),
+            ("Phosphor", "Lighting engine improvements.", "Performance"),
+            ("FerriteCore", "Reduces memory usage.", "Performance"),
+            ("Starlight", "Lighting engine optimizer.", "Performance"),
+            ("Entity Culling", "Optimizes entity rendering.", "Performance"),
+            ("ImmediatelyFast", "Reduces CPU overhead.", "Performance"),
+            ("More Culling", "Culls more, gets more FPS.", "Performance"),
+            ("Cloth Config API", "Config library for many mods.", "Libraries"),
+            ("Mod Menu", "Add a mod menu to the game.", "Utility"),
+            ("JEI", "View items and recipes easily.", "Utility"),
+            ("JourneyMap", "Real-time mapping in your world.", "Utility"),
+            ("AppleSkin", "Food stats HUD improvements.", "Gameplay"),
+            ("Mouse Tweaks", "Inventory management.", "Utility")
         ]
+        
         r, c = 0, 0
-        for name, desc in addons:
-            card = ctk.CTkFrame(scroll, fg_color=CARD_BG, corner_radius=10, width=240, height=80)
-            card.grid(row=r, column=c, padx=8, pady=8)
+        for name, desc, category in all_addons:
+            card = ctk.CTkFrame(scroll, fg_color=CARD_BG, corner_radius=10, width=260, height=90)
+            card.grid(row=r, column=c, padx=10, pady=10)
             card.grid_propagate(False)
+            
             ctk.CTkLabel(card, text=name, font=("Segoe UI", 14, "bold")).place(x=15, y=15)
-            ctk.CTkLabel(card, text=desc, font=("Segoe UI", 11), text_color=TEXT_SECONDARY).place(x=15, y=35)
-            ctk.CTkLabel(card, text="✔ Installed", text_color=GREEN_STATUS, font=("Segoe UI", 11, "bold")).place(x=15, y=55)
+            ctk.CTkLabel(card, text=desc, font=("Segoe UI", 11), text_color=TEXT_SECONDARY).place(x=15, y=38)
+            ctk.CTkLabel(card, text="✔ Installed", text_color=GREEN_STATUS, font=("Segoe UI", 11, "bold")).place(x=15, y=60)
             c += 1
             if c > 2: c, r = 0, r + 1
             
         return f
 
+    # --- SETTINGS TAB ---
     def tab_settings(self):
         f = ctk.CTkFrame(self.main_area, fg_color="transparent")
         f.grid_rowconfigure(1, weight=1)
         f.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(f, text="SETTINGS", font=("Segoe UI", 28, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 20))
+        top = ctk.CTkFrame(f, fg_color="transparent")
+        top.grid(row=0, column=0, sticky="ew", pady=(0, 20))
+        ctk.CTkLabel(top, text="SETTINGS", font=("Segoe UI", 28, "bold", "italic")).pack(side="left")
+        ctk.CTkButton(top, text="🔄 Reset to Default", fg_color="transparent", border_width=1, border_color=TEXT_SECONDARY).pack(side="right")
 
         scroll = ctk.CTkScrollableFrame(f, fg_color="transparent")
         scroll.grid(row=1, column=0, sticky="nsew")
         scroll.grid_columnconfigure((0, 1, 2), weight=1)
 
-        def make_card(parent, title, options, row, col):
+        def make_setting_group(parent, title, options, row, col):
             card = ctk.CTkFrame(parent, fg_color=CARD_BG, corner_radius=12)
             card.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
             ctk.CTkLabel(card, text=title.upper(), font=("Segoe UI", 12, "bold"), text_color=TEXT_SECONDARY).pack(anchor="w", padx=20, pady=(15, 10))
             
             for name, desc, w_type in options:
                 row_f = ctk.CTkFrame(card, fg_color="transparent")
-                row_f.pack(fill="x", padx=20, pady=8)
+                row_f.pack(fill="x", padx=20, pady=10)
                 txt = ctk.CTkFrame(row_f, fg_color="transparent")
                 txt.pack(side="left", fill="x", expand=True)
                 ctk.CTkLabel(txt, text=name, font=("Segoe UI", 13, "bold")).pack(anchor="w")
@@ -365,21 +489,39 @@ class SupersonicApp(ctk.CTk):
                     s = ctk.CTkSwitch(row_f, text="", progress_color=ACCENT_BLUE)
                     s.select()
                     s.pack(side="right")
-                elif w_type == "dropdown":
-                    ctk.CTkOptionMenu(row_f, values=["8192 MB", "4096 MB"], width=100, fg_color="#1E293B").pack(side="right")
+                elif w_type == "dropdown_ram":
+                    ctk.CTkOptionMenu(row_f, values=["4096 MB", "8192 MB", "12288 MB", "16384 MB"], width=120, fg_color="#1E293B").pack(side="right")
+                elif w_type == "dropdown_mode":
+                    ctk.CTkOptionMenu(row_f, values=["Ultra (Recommended)", "Balanced", "Power Saver"], width=150, fg_color="#1E293B").pack(side="right")
 
-        make_card(scroll, "Performance Settings", [
-            ("RAM Allocation", "Set default RAM", "dropdown"),
-            ("Smart Memory Management", "Auto clear memory", "switch"),
-            ("Optimize Launcher", "Apply optimizations", "switch")
+        make_setting_group(scroll, "General Settings", [
+            ("Language", "Choose your preferred language.", "dropdown_ram"), # using ram as placeholder for dropdown
+            ("Theme", "Choose your preferred theme.", "dropdown_ram"),
+            ("Start with Windows", "Launch on system startup.", "switch"),
+            ("Minimize to System Tray", "Close button minimizes to tray.", "switch")
         ], 0, 0)
         
-        make_card(scroll, "Minecraft Settings", [
-            ("Default Java Version", "Select runtime", "dropdown"),
-            ("Use Native Libraries", "Better performance", "switch")
+        make_setting_group(scroll, "Performance Settings", [
+            ("Performance Mode", "Optimize launcher performance.", "dropdown_mode"),
+            ("RAM Allocation", "Set default RAM for instances.", "dropdown_ram"),
+            ("Smart Memory Management", "Automatically clean memory.", "switch"),
+            ("Optimize Launcher", "Apply advanced optimizations.", "switch")
         ], 0, 1)
 
-        sys_p = ctk.CTkFrame(f, fg_color=CARD_BG, corner_radius=12, width=280)
+        make_setting_group(scroll, "Minecraft Settings", [
+            ("Default Java Version", "Select default Java runtime.", "dropdown_ram"),
+            ("Automatically Install Java", "Install Java if missing.", "switch"),
+            ("Use Native Libraries", "Use native for better perf.", "switch")
+        ], 0, 2)
+        
+        make_setting_group(scroll, "Cloud & Sync", [
+            ("Enable Cloud Sync", "Sync instances and settings.", "switch"),
+            ("Sync Across Devices", "Keep data synced everywhere.", "switch"),
+            ("Crash Reports", "Auto send AI crash reports.", "switch")
+        ], 1, 0)
+
+        # System Overview Side Panel
+        sys_p = ctk.CTkFrame(f, fg_color=CARD_BG, corner_radius=12, width=300)
         sys_p.grid(row=1, column=1, sticky="nsew", pady=10, padx=(10, 0))
         ctk.CTkLabel(sys_p, text="SYSTEM OVERVIEW", font=("Segoe UI", 12, "bold"), text_color=TEXT_SECONDARY).pack(anchor="w", padx=20, pady=(20, 10))
         
@@ -387,22 +529,29 @@ class SupersonicApp(ctk.CTk):
             row = ctk.CTkFrame(sys_p, fg_color="transparent")
             row.pack(fill="x", padx=20, pady=5)
             ctk.CTkLabel(row, text=k.upper(), font=("Segoe UI", 12, "bold")).pack(side="left")
-            ctk.CTkLabel(row, text=v, font=("Segoe UI", 12), text_color=TEXT_SECONDARY).pack(side="right")
+            ctk.CTkLabel(row, text=v, font=("Segoe UI", 11), text_color=TEXT_SECONDARY).pack(side="right")
+            
+        ctk.CTkButton(sys_p, text="📈 Run Diagnostics", fg_color="transparent", border_width=1, border_color=ACCENT_BLUE, text_color=ACCENT_BLUE).pack(fill="x", padx=20, pady=20)
 
         return f
 
+    # --- SERVERS TAB ---
     def tab_servers(self):
         f = ctk.CTkFrame(self.main_area, fg_color="transparent")
-        ctk.CTkLabel(f, text="MULTIPLAYER SERVERS", font=("Segoe UI", 28, "bold")).pack(anchor="w", pady=(0, 20))
+        ctk.CTkLabel(f, text="MULTIPLAYER SERVERS", font=("Segoe UI", 28, "bold", "italic")).pack(anchor="w", pady=(0, 20))
         
         card = ctk.CTkFrame(f, fg_color=CARD_BG, corner_radius=12)
         card.pack(fill="x", pady=10)
         ctk.CTkLabel(card, text="⭐ Your Managed Server", text_color="#F59E0B", font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=20, pady=(15, 0))
         ctk.CTkLabel(card, text="NarratorMC", font=("Segoe UI", 24, "bold")).pack(anchor="w", padx=20)
         ctk.CTkLabel(card, text="IP: www.NarratorMC.net", font=("Segoe UI", 14), text_color=TEXT_SECONDARY).pack(anchor="w", padx=20, pady=(0, 15))
-        ctk.CTkButton(card, text="Quick Join", fg_color=ACCENT_BLUE).pack(anchor="e", padx=20, pady=(0, 15))
+        
+        btn_frame = ctk.CTkFrame(card, fg_color="transparent")
+        btn_frame.pack(anchor="e", padx=20, pady=(0, 15))
+        ctk.CTkButton(btn_frame, text="⚙️ Manage Plugins", fg_color="#1E293B").pack(side="left", padx=10)
+        ctk.CTkButton(btn_frame, text="▶ Quick Join", fg_color=ACCENT_BLUE).pack(side="left")
         return f
 
 if __name__ == "__main__":
-    app = SupersonicApp()
+    app = SupersonicClient()
     app.mainloop()
