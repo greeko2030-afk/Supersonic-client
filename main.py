@@ -8,16 +8,19 @@ import subprocess
 import platform
 import psutil
 import customtkinter as ctk
-from tkinter import messagebox
+import minecraft_launcher_lib
 
 # ==============================================================================
-# ENGINE & CORE LOGIC (REAL WORKING BACKEND)
+# ENGINE & CORE LOGIC (REAL MINECRAFT LAUNCHER BACKEND)
 # ==============================================================================
 class SupersonicEngine:
     def __init__(self):
         self.config_file = "supersonic_config.json"
         self.config = self.load_config()
         self.system_info = self.get_system_info()
+        # Using default OS minecraft directory, can be customized
+        self.minecraft_directory = minecraft_launcher_lib.utils.get_minecraft_directory()
+        self.target_mc_version = "1.20.4" # Set your preferred default version
 
     def load_config(self):
         default_config = {
@@ -28,7 +31,7 @@ class SupersonicEngine:
             "cloud_sync": True,
             "auto_update": True,
             "username": "RafTee_playssMC",
-            "uuid": str(uuid.uuid4()) # Offline UUID Generator
+            "uuid": str(uuid.uuid4())
         }
         if os.path.exists(self.config_file):
             try:
@@ -46,7 +49,6 @@ class SupersonicEngine:
     def get_system_info(self):
         ram_gb = round(psutil.virtual_memory().total / (1024**3), 1)
         try:
-            # Auto GPU Detection (Windows)
             if platform.system() == "Windows":
                 gpu = subprocess.check_output("wmic path win32_videocard get name", shell=True).decode().split('\n')[1].strip()
             else:
@@ -62,7 +64,6 @@ class SupersonicEngine:
         }
 
     def generate_jvm_args(self):
-        # Advanced JVM Tuning & Maximum Speed Launch Logic
         ram = self.config["ram_mb"]
         args = [
             f"-Xms{ram}M", f"-Xmx{ram}M",
@@ -73,31 +74,71 @@ class SupersonicEngine:
             "-XX:+ParallelRefProcEnabled",
             "-Dsun.rmi.dgc.client.gcInterval=3600000",
             "-Dsun.rmi.dgc.server.gcInterval=3600000",
-            "-Djava.net.preferIPv4Stack=true", # Ultra-Low Ping Optimization
-            "-Dlwjgla.vulkan.enable=true", # Vulkan Fallback Engine
-            "-Dmouse.raw.input=true" # Raw Input Optimization
+            "-Djava.net.preferIPv4Stack=true",
+            "-Dlwjgla.vulkan.enable=true",
+            "-Dmouse.raw.input=true"
         ]
         return args
 
     def launch_minecraft(self, status_callback):
-        status_callback("Analyzing Mods & Dependencies...")
-        time.sleep(1) # Simulating Auto Download Required Mods
-        
-        status_callback("Applying Advanced JVM Tuning...")
-        jvm_args = self.generate_jvm_args()
-        time.sleep(0.5)
-        
-        status_callback("Starting Maximum Speed Engine...")
-        # REAL WORK: Executing Java process (Requires Java installed)
         try:
-            cmd = ["java", "-version"] # Replaced with actual MC start command in production
-            subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=0x08000000 if platform.system() == "Windows" else 0)
+            status_callback("Fetching Version Manifest...")
+            # Ensure the directory exists
+            if not os.path.exists(self.minecraft_directory):
+                os.makedirs(self.minecraft_directory)
+
+            # Callback functions for download progress
+            def set_status(status):
+                status_callback(f"Status: {status}")
+
+            def set_progress(progress):
+                # Optionally handle progress bar here
+                pass
+
+            def set_max(new_max):
+                pass
+
+            callback_dict = {
+                "setStatus": set_status,
+                "setProgress": set_progress,
+                "setMax": set_max
+            }
+
+            status_callback(f"Checking & Downloading Minecraft {self.target_mc_version}...")
+            # REAL WORK: Downloads vanilla client, assets, and libraries if missing
+            minecraft_launcher_lib.install.install_minecraft_version(
+                versionid=self.target_mc_version, 
+                minecraft_directory=self.minecraft_directory, 
+                callback=callback_dict
+            )
+
+            status_callback("Applying Advanced JVM Tuning...")
+            options = {
+                "username": self.config["username"],
+                "uuid": self.config["uuid"],
+                "token": "", # Offline Authentication
+                "jvmArguments": self.generate_jvm_args(),
+                "launcherName": "Supersonic Client",
+                "launcherVersion": "2.5.0"
+            }
+
+            status_callback("Starting Maximum Speed Engine...")
+            # Get the exact command to run the game
+            minecraft_command = minecraft_launcher_lib.command.get_minecraft_command(
+                version=self.target_mc_version, 
+                minecraft_directory=self.minecraft_directory, 
+                options=options
+            )
+
+            # Launch the game process
+            subprocess.Popen(minecraft_command, creationflags=0x08000000 if platform.system() == "Windows" else 0)
             status_callback("Game Running smoothly. Smart Memory active.")
+
         except Exception as e:
-            status_callback(f"AI Crash Assistant: {str(e)}")
+            status_callback(f"AI Crash Assistant: {str(e)[:50]}...")
 
 # ==============================================================================
-# USER INTERFACE (EXACT SAME AS MOCKUPS)
+# USER INTERFACE
 # ==============================================================================
 ctk.set_appearance_mode("Dark")
 
@@ -132,9 +173,6 @@ class SupersonicApp(ctk.CTk):
         self.build_tabs()
         self.switch_tab("Dashboard")
 
-    # --------------------------------------------------------------------------
-    # SIDEBAR
-    # --------------------------------------------------------------------------
     def setup_sidebar(self):
         self.sidebar = ctk.CTkFrame(self, width=240, fg_color="#0A0D14", corner_radius=0)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
@@ -164,7 +202,6 @@ class SupersonicApp(ctk.CTk):
                 color = PURPLE_AI if badge == "NEW" else GREEN_STATUS
                 ctk.CTkLabel(f, text=badge, fg_color=color, text_color="white", font=("Segoe UI", 9, "bold"), corner_radius=4, width=30, height=18).grid(row=0, column=1)
 
-        # Account Section
         acc = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         acc.grid(row=13, column=0, sticky="ew", padx=20, pady=20)
         ctk.CTkLabel(acc, text="Account", font=("Segoe UI", 11), text_color=TEXT_SECONDARY).pack(anchor="w")
@@ -177,16 +214,12 @@ class SupersonicApp(ctk.CTk):
         for tab in self.tabs.values(): tab.grid_remove()
         if tab_name in self.tabs: self.tabs[tab_name].grid(row=1, column=0, sticky="nsew")
 
-    # --------------------------------------------------------------------------
-    # DASHBOARD TAB
-    # --------------------------------------------------------------------------
     def build_tabs(self):
         self.tabs["Dashboard"] = self.tab_dashboard()
         self.tabs["Modpacks"] = self.tab_modpacks()
         self.tabs["Addons"] = self.tab_addons()
         self.tabs["Settings"] = self.tab_settings()
         self.tabs["Servers"] = self.tab_servers()
-        # Fallback for empty tabs
         for t in ["Instances", "Resource Packs", "Worlds", "Agent (AI)"]:
             if t not in self.tabs:
                 f = ctk.CTkFrame(self.main_area, fg_color="transparent")
@@ -202,7 +235,6 @@ class SupersonicApp(ctk.CTk):
         left = ctk.CTkFrame(frame, fg_color="transparent")
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 20))
 
-        # Hero
         hero = ctk.CTkFrame(left, fg_color=CARD_BG, corner_radius=15, border_width=1, border_color="#2A3143")
         hero.pack(fill="x", pady=(0, 20), ipady=20)
         ctk.CTkLabel(hero, text="SUPERSONIC CLIENT", font=("Segoe UI", 28, "bold")).place(x=30, y=20)
@@ -211,20 +243,18 @@ class SupersonicApp(ctk.CTk):
         self.status_lbl = ctk.CTkLabel(hero, text="🟢 Ready to Launch", font=("Segoe UI", 12, "bold"), text_color=GREEN_STATUS)
         self.status_lbl.place(x=30, y=90)
         
-        ctk.CTkButton(hero, text="▶ PLAY", font=("Segoe UI", 20, "bold"), fg_color=ACCENT_BLUE, hover_color="#1D40B0", width=180, height=55, command=self.start_game).place(relx=0.95, rely=0.5, anchor="e")
+        self.play_btn = ctk.CTkButton(hero, text="▶ PLAY", font=("Segoe UI", 20, "bold"), fg_color=ACCENT_BLUE, hover_color="#1D40B0", width=180, height=55, command=self.start_game)
+        self.play_btn.place(relx=0.95, rely=0.5, anchor="e")
 
-        # Addons Preview
         add = ctk.CTkFrame(left, fg_color=CARD_BG, corner_radius=12)
         add.pack(fill="x", pady=(0, 20), ipady=10)
         ctk.CTkLabel(add, text="⚡ ALL ADDONS - ONE CLICK INSTALL", font=("Segoe UI", 14, "bold")).pack(anchor="w", padx=20, pady=15)
 
-        # Right AI Panel
         ai = ctk.CTkFrame(frame, fg_color=CARD_BG, corner_radius=15)
         ai.grid(row=0, column=1, sticky="nsew")
         ctk.CTkLabel(ai, text="AGENT (AI) BETA", font=("Segoe UI", 14, "bold")).pack(pady=(20, 10))
         ctk.CTkButton(ai, text="🛠 Scan & Auto Fix", fg_color=PURPLE_AI, hover_color="#5B21B6", height=45).pack(fill="x", padx=20, pady=10)
         
-        # Realtime Hardware Monitor
         ctk.CTkLabel(ai, text="System Diagnostics", font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=20, pady=(20, 5))
         self.ram_monitor = ctk.CTkProgressBar(ai, progress_color=GREEN_STATUS)
         self.ram_monitor.pack(fill="x", padx=20, pady=5)
@@ -233,16 +263,23 @@ class SupersonicApp(ctk.CTk):
         return frame
 
     def start_game(self):
-        threading.Thread(target=self.engine.launch_minecraft, args=(self.status_lbl.configure,), daemon=True).start()
+        self.play_btn.configure(state="disabled", text="LAUNCHING...")
+        
+        # Thread safe label updater
+        def update_label(msg):
+            self.after(0, lambda: self.status_lbl.configure(text=msg))
+            
+        def run_thread():
+            self.engine.launch_minecraft(update_label)
+            self.after(0, lambda: self.play_btn.configure(state="normal", text="▶ PLAY"))
+
+        threading.Thread(target=run_thread, daemon=True).start()
 
     def update_monitor(self):
         mem = psutil.virtual_memory().percent / 100.0
         self.ram_monitor.set(mem)
         self.after(2000, self.update_monitor)
 
-    # --------------------------------------------------------------------------
-    # MODPACKS TAB
-    # --------------------------------------------------------------------------
     def tab_modpacks(self):
         f = ctk.CTkFrame(self.main_area, fg_color="transparent")
         f.grid_rowconfigure(1, weight=1)
@@ -269,9 +306,6 @@ class SupersonicApp(ctk.CTk):
 
         return f
 
-    # --------------------------------------------------------------------------
-    # ADDONS TAB
-    # --------------------------------------------------------------------------
     def tab_addons(self):
         f = ctk.CTkFrame(self.main_area, fg_color="transparent")
         f.grid_rowconfigure(1, weight=1)
@@ -303,9 +337,6 @@ class SupersonicApp(ctk.CTk):
             
         return f
 
-    # --------------------------------------------------------------------------
-    # SETTINGS TAB
-    # --------------------------------------------------------------------------
     def tab_settings(self):
         f = ctk.CTkFrame(self.main_area, fg_color="transparent")
         f.grid_rowconfigure(1, weight=1)
@@ -348,7 +379,6 @@ class SupersonicApp(ctk.CTk):
             ("Use Native Libraries", "Better performance", "switch")
         ], 0, 1)
 
-        # System Overview (Right Panel)
         sys_p = ctk.CTkFrame(f, fg_color=CARD_BG, corner_radius=12, width=280)
         sys_p.grid(row=1, column=1, sticky="nsew", pady=10, padx=(10, 0))
         ctk.CTkLabel(sys_p, text="SYSTEM OVERVIEW", font=("Segoe UI", 12, "bold"), text_color=TEXT_SECONDARY).pack(anchor="w", padx=20, pady=(20, 10))
@@ -361,9 +391,6 @@ class SupersonicApp(ctk.CTk):
 
         return f
 
-    # --------------------------------------------------------------------------
-    # SERVERS TAB
-    # --------------------------------------------------------------------------
     def tab_servers(self):
         f = ctk.CTkFrame(self.main_area, fg_color="transparent")
         ctk.CTkLabel(f, text="MULTIPLAYER SERVERS", font=("Segoe UI", 28, "bold")).pack(anchor="w", pady=(0, 20))
