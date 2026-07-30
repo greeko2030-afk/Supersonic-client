@@ -339,7 +339,6 @@ class SupersonicClient(ctk.CTk):
         perf_frame = ctk.CTkFrame(left_col, fg_color="transparent")
         perf_frame.pack(fill="x", pady=10)
         
-        # ERROR FIXED: width and height passed directly to constructor
         def make_monitor(parent, title, val, color):
             f = ctk.CTkFrame(parent, fg_color=CARD_BG, corner_radius=8, height=60)
             f.pack(side="left", fill="x", expand=True, padx=5)
@@ -400,20 +399,18 @@ class SupersonicClient(ctk.CTk):
         f.grid_columnconfigure(0, weight=3)
         f.grid_columnconfigure(1, weight=1)
         
-        # Header
         top = ctk.CTkFrame(f, fg_color="transparent")
         top.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 20))
         ctk.CTkLabel(top, text="MODPACKS", font=("Segoe UI", 28, "bold", "italic")).pack(side="left")
         ctk.CTkButton(top, text="🌐 Browse CurseForge", fg_color="transparent", border_width=1, border_color=ACCENT_BLUE).pack(side="right")
         ctk.CTkButton(top, text="+ Import Modpack", fg_color=BORDER_COLOR).pack(side="right", padx=10)
 
-        # Main Grid Area
         scroll = ctk.CTkScrollableFrame(f, fg_color="transparent")
         scroll.grid(row=1, column=0, sticky="nsew")
         
         packs = [
             ("Fabulously Optimized", "Performance", "12.4M", "1.21.4", "4.8"),
-            ("Better MC [FABRIC]", "Vanilla+", "8.7M", "1.21.4", "4.7"),
+            ("Better BMC [FABRIC]", "Vanilla+", "8.7M", "1.21.4", "4.7"),
             ("RLCRAFT", "Hardcore", "6.2M", "1.20.1", "4.9"),
             ("All the Mods 9", "Tech & Magic", "5.9M", "1.20.1", "4.6"),
             ("SkyFactory 5", "Skyblock", "5.1M", "1.20.1", "4.6"),
@@ -443,7 +440,6 @@ class SupersonicClient(ctk.CTk):
             c += 1
             if c > 2: c, r = 0, r + 1
 
-        # Sidebar Filters
         filters = ctk.CTkFrame(f, fg_color=CARD_BG, corner_radius=12)
         filters.grid(row=1, column=1, sticky="nsew", padx=(10, 0))
         
@@ -467,7 +463,6 @@ class SupersonicClient(ctk.CTk):
         f.grid_columnconfigure(0, weight=3)
         f.grid_columnconfigure(1, weight=1)
         
-        # Header
         top = ctk.CTkFrame(f, fg_color="transparent")
         top.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 20))
         ctk.CTkLabel(top, text="ADDONS", font=("Segoe UI", 28, "bold", "italic")).pack(side="left")
@@ -507,7 +502,6 @@ class SupersonicClient(ctk.CTk):
             c += 1
             if c > 2: c, r = 0, r + 1
 
-        # Sidebar Stats
         sidebar = ctk.CTkFrame(f, fg_color=CARD_BG, corner_radius=12)
         sidebar.grid(row=1, column=1, sticky="nsew", padx=(10, 0))
         
@@ -527,6 +521,48 @@ class SupersonicClient(ctk.CTk):
 
         return f
 
+    # --- SERVERS TAB ---
+    def tab_servers(self):
+        f = ctk.CTkFrame(self.main_area, fg_color="transparent")
+        f.grid_rowconfigure(1, weight=1)
+        f.grid_columnconfigure(0, weight=1)
+
+        top = ctk.CTkFrame(f, fg_color="transparent")
+        top.grid(row=0, column=0, sticky="ew", pady=(0, 20))
+        ctk.CTkLabel(top, text="SERVERS", font=("Segoe UI", 28, "bold", "italic")).pack(side="left")
+        ctk.CTkButton(top, text="+ Add Server", fg_color=ACCENT_BLUE).pack(side="right")
+
+        scroll = ctk.CTkScrollableFrame(f, fg_color="transparent")
+        scroll.grid(row=1, column=0, sticky="nsew")
+        scroll.grid_columnconfigure((0, 1), weight=1)
+
+        servers = [
+            ("NarratorMC Official", "www.NarratorMC.net", "1.21.4", "Online", "24/100", "The Ultimate Minecraft Experience"),
+            ("Hypixel Network", "mc.hypixel.net", "1.8 - 1.21", "Online", "45,210/100k", "The largest Minecraft server network!"),
+            ("Survival Universe", "play.survivaluniverse.com", "1.21.4", "Online", "89/250", "Custom enchants, economy & claims."),
+            ("SkyBlock Core", "hub.skyblockcore.net", "1.20 - 1.21", "Online", "142/500", "Advanced custom skyblock minigames.")
+        ]
+
+        r, c = 0, 0
+        for name, ip, ver, status, players, desc in servers:
+            card = ctk.CTkFrame(scroll, fg_color=CARD_BG, corner_radius=12, height=140)
+            card.grid(row=r, column=c, padx=10, pady=10, sticky="nsew")
+            card.pack_propagate(False)
+
+            ctk.CTkLabel(card, text=name, font=("Segoe UI", 16, "bold")).place(x=20, y=15)
+            ctk.CTkLabel(card, text=ip, font=("Consolas", 12), text_color=TEXT_SECONDARY).place(x=20, y=40)
+            ctk.CTkLabel(card, text=desc, font=("Segoe UI", 11), text_color=TEXT_SECONDARY).place(x=20, y=65)
+            
+            ctk.CTkLabel(card, text=f"🟢 {status} • {players}", font=("Segoe UI", 12, "bold"), text_color=GREEN_STATUS).place(relx=0.95, y=20, anchor="ne")
+            ctk.CTkButton(card, text="Join Server", fg_color=ACCENT_BLUE, width=120).place(relx=0.95, y=90, anchor="e")
+
+            c += 1
+            if c > 1:
+                c = 0
+                r += 1
+
+        return f
+
     # --- SETTINGS TAB ---
     def tab_settings(self):
         f = ctk.CTkFrame(self.main_area, fg_color="transparent")
@@ -534,13 +570,11 @@ class SupersonicClient(ctk.CTk):
         f.grid_columnconfigure(0, weight=3)
         f.grid_columnconfigure(1, weight=1)
 
-        # Header
         top = ctk.CTkFrame(f, fg_color="transparent")
         top.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 20))
         ctk.CTkLabel(top, text="SETTINGS", font=("Segoe UI", 28, "bold", "italic")).pack(side="left")
         ctk.CTkButton(top, text="🔄 Reset to Default", fg_color="transparent", border_width=1, border_color=TEXT_SECONDARY).pack(side="right")
 
-        # Complex Grid Layout for Settings
         scroll = ctk.CTkScrollableFrame(f, fg_color="transparent")
         scroll.grid(row=1, column=0, sticky="nsew")
         scroll.grid_columnconfigure((0, 1, 2), weight=1)
@@ -611,7 +645,6 @@ class SupersonicClient(ctk.CTk):
             ("Restore from Backup", "Restore from cloud backup.", "button")
         ], 1, 2)
 
-        # Right Sidebar - System Overview
         sys_p = ctk.CTkFrame(f, fg_color=CARD_BG, corner_radius=12, width=300)
         sys_p.grid(row=1, column=1, sticky="nsew", pady=10, padx=(10, 0))
         ctk.CTkLabel(sys_p, text="SYSTEM OVERVIEW", font=("Segoe UI", 12, "bold"), text_color=TEXT_SECONDARY).pack(anchor="w", padx=20, pady=(20, 10))
@@ -627,25 +660,8 @@ class SupersonicClient(ctk.CTk):
         ctk.CTkLabel(sys_p, text="AGENT (AI) QUICK ACTIONS", font=("Segoe UI", 12, "bold"), text_color=TEXT_SECONDARY).pack(anchor="w", padx=20, pady=(20, 10))
         actions = [("Auto Fix Errors", PURPLE_AI), ("Optimize Performance", GREEN_STATUS), ("Clean Junk Files", "#F59E0B")]
         for act, col in actions:
-            ctk.CTkButton(sys_p, text=act, fg_color="transparent", text_color=col, anchor="w", border_width=1, border_color=BORDER_COLOR).pack(fill="x", padx=20, pady=5)
-            
-        return f
+            ctk.CTkButton(sys_p, text=act, fg_color=col, height=35).pack(fill="x", padx=20, pady=5)
 
-    # --- SERVERS TAB ---
-    def tab_servers(self):
-        f = ctk.CTkFrame(self.main_area, fg_color="transparent")
-        ctk.CTkLabel(f, text="MULTIPLAYER SERVERS", font=("Segoe UI", 28, "bold", "italic")).pack(anchor="w", pady=(0, 20))
-        
-        card = ctk.CTkFrame(f, fg_color=CARD_BG, corner_radius=12)
-        card.pack(fill="x", pady=10)
-        ctk.CTkLabel(card, text="⭐ Your Managed Server", text_color="#F59E0B", font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=20, pady=(15, 0))
-        ctk.CTkLabel(card, text="NarratorMC", font=("Segoe UI", 24, "bold")).pack(anchor="w", padx=20)
-        ctk.CTkLabel(card, text="IP: www.NarratorMC.net", font=("Segoe UI", 14), text_color=TEXT_SECONDARY).pack(anchor="w", padx=20, pady=(0, 15))
-        
-        btn_frame = ctk.CTkFrame(card, fg_color="transparent")
-        btn_frame.pack(anchor="e", padx=20, pady=(0, 15))
-        ctk.CTkButton(btn_frame, text="⚙️ Manage Plugins", fg_color=BORDER_COLOR).pack(side="left", padx=10)
-        ctk.CTkButton(btn_frame, text="▶ Quick Join", fg_color=ACCENT_BLUE).pack(side="left")
         return f
 
 if __name__ == "__main__":
