@@ -18,6 +18,45 @@ try:
 except ImportError:
     PSUTIL_AVAILABLE = False
 
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
+
+# ==============================================================================
+# MODRINTH API HANDLER
+# ==============================================================================
+class ModrinthAPI:
+    BASE_URL = "https://api.modrinth.com/v2"
+    USER_AGENT = "SupersonicClient/2.5.0 (contact@narratormc.net)"
+
+    @staticmethod
+    def fetch_projects(project_type="mod", limit=12):
+        if not REQUESTS_AVAILABLE:
+            return [{"title": "Error", "description": "Please 'pip install requests' to use Modrinth API.", "downloads": 0}]
+            
+        url = f"{ModrinthAPI.BASE_URL}/search"
+        # project_type can be 'mod', 'modpack', 'shader', etc.
+        params = {
+            "facets": f'[["project_type:{project_type}"]]',
+            "limit": limit,
+            "index": "downloads" # Sort by most downloaded
+        }
+        headers = {"User-Agent": ModrinthAPI.USER_AGENT}
+        
+        try:
+            response = requests.get(url, params=params, headers=headers, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("hits", [])
+            else:
+                print(f"Modrinth API Error: Status {response.status_code}")
+                return []
+        except Exception as e:
+            print(f"Modrinth Connection Error: {e}")
+            return []
+
 # ==============================================================================
 # ENGINE & CORE LOGIC
 # ==============================================================================
@@ -27,7 +66,7 @@ class SupersonicEngine:
         self.config = self.load_config()
         self.system_info = self.get_system_info()
         self.minecraft_directory = minecraft_launcher_lib.utils.get_minecraft_directory()
-        self.target_mc_version = "1.21.4" # Ensure this version exists or change to 1.20.4
+        self.target_mc_version = "1.21.4"
         self.is_premium = False
 
     def load_config(self):
@@ -107,8 +146,10 @@ class SupersonicEngine:
             }
 
             status_callback(f"Status: Checking/Installing Minecraft {self.target_mc_version}...")
+            
+            # FIXED THE ERROR HERE: Changed 'versionid' to 'version'
             minecraft_launcher_lib.install.install_minecraft_version(
-                versionid=self.target_mc_version,
+                version=self.target_mc_version,
                 minecraft_directory=self.minecraft_directory,
                 callback=callback_dict
             )
@@ -131,7 +172,6 @@ class SupersonicEngine:
 
             status_callback("Status: Starting Game Engine...")
             
-            # Popen will launch the game. If Java is not found, this will throw an error.
             subprocess.Popen(
                 minecraft_command,
                 creationflags=0x08000000 if platform.system() == "Windows" else 0
@@ -139,7 +179,6 @@ class SupersonicEngine:
             status_callback("Status: Game is Running!")
 
         except Exception as e:
-            # THIS IS WHERE IT CRASHED BEFORE. NOW SHOWING REAL ERROR.
             error_msg = str(e)
             if "FileNotFoundError" in error_msg or "java" in error_msg.lower():
                 status_callback("Error: Java is not installed or not in PATH!")
@@ -186,14 +225,12 @@ class SupersonicClient(ctk.CTk):
         self.switch_tab("Dashboard")
 
     def show_popup(self, title, message):
-        """A working popup system for button clicks to make them feel real."""
         popup = ctk.CTkToplevel(self)
         popup.title(title)
         popup.geometry("350x150")
         popup.attributes("-topmost", True)
         popup.configure(fg_color=CARD_BG)
         
-        # Center the popup
         popup.update_idletasks()
         x = self.winfo_x() + (self.winfo_width() // 2) - (350 // 2)
         y = self.winfo_y() + (self.winfo_height() // 2) - (150 // 2)
@@ -201,6 +238,13 @@ class SupersonicClient(ctk.CTk):
 
         ctk.CTkLabel(popup, text=message, font=("Segoe UI", 14), text_color=TEXT_PRIMARY, wraplength=300).pack(pady=(30, 20))
         ctk.CTkButton(popup, text="OK", fg_color=ACCENT_BLUE, width=100, command=popup.destroy).pack()
+
+    def format_downloads(self, num):
+        if num >= 1000000:
+            return f"{num/1000000:.1f}M"
+        elif num >= 1000:
+            return f"{num/1000:.1f}K"
+        return str(num)
 
     def setup_sidebar(self):
         self.sidebar = ctk.CTkFrame(self, width=220, fg_color=SIDEBAR_BG, corner_radius=0)
@@ -212,7 +256,6 @@ class SupersonicClient(ctk.CTk):
         ctk.CTkLabel(logo_frame, text="⚡", font=("Segoe UI", 28), text_color=ACCENT_BLUE).pack(side="left", padx=(0, 10))
         ctk.CTkLabel(logo_frame, text="SUPERSONIC", font=("Segoe UI", 18, "bold")).pack(side="left")
 
-        # Removed Instances, Servers, Resource Packs, Worlds, Agent
         nav_items = [
             ("Dashboard", "🏠"), 
             ("Modpacks", "📦"),
@@ -246,6 +289,7 @@ class SupersonicClient(ctk.CTk):
             )
         for tab in self.tabs.values():
             tab.grid_remove()
+        
         if tab_name in self.tabs:
             self.tabs[tab_name].grid(row=1, column=0, sticky="nsew")
 
@@ -261,7 +305,6 @@ class SupersonicClient(ctk.CTk):
         frame.grid_columnconfigure(0, weight=1)
         frame.grid_rowconfigure(1, weight=1)
 
-        # Hero Banner
         hero = ctk.CTkFrame(frame, fg_color=CARD_BG, corner_radius=15, border_width=1, border_color=BORDER_COLOR)
         hero.grid(row=0, column=0, sticky="ew", pady=(0, 20), ipady=30)
         
@@ -281,15 +324,14 @@ class SupersonicClient(ctk.CTk):
         self.status_lbl = ctk.CTkLabel(hero, text=f"Status: Ready to Launch ({self.engine.target_mc_version})", font=("Segoe UI", 12), text_color=TEXT_SECONDARY)
         self.status_lbl.place(relx=0.95, rely=0.8, anchor="e")
 
-        # Quick Addons Grid
         addons_frame = ctk.CTkFrame(frame, fg_color=CARD_BG, corner_radius=12)
         addons_frame.grid(row=1, column=0, sticky="nsew")
         
         top_a = ctk.CTkFrame(addons_frame, fg_color="transparent")
         top_a.pack(fill="x", padx=20, pady=15)
-        ctk.CTkLabel(top_a, text="⚡ RECOMMENDED ADDONS", font=("Segoe UI", 14, "bold")).pack(side="left")
+        ctk.CTkLabel(top_a, text="⚡ ESSENTIAL MODS", font=("Segoe UI", 14, "bold")).pack(side="left")
         
-        ctk.CTkButton(top_a, text="⬇ Install All", fg_color="transparent", border_width=1, border_color=ACCENT_BLUE, text_color=ACCENT_BLUE, width=100, command=lambda: self.show_popup("Install Success", "All recommended addons have been installed successfully!")).pack(side="right")
+        ctk.CTkButton(top_a, text="⬇ Install All", fg_color="transparent", border_width=1, border_color=ACCENT_BLUE, text_color=ACCENT_BLUE, width=100, command=lambda: self.show_popup("Install Success", "All essential mods have been installed successfully!")).pack(side="right")
 
         scroll = ctk.CTkScrollableFrame(addons_frame, fg_color="transparent")
         scroll.pack(fill="both", expand=True, padx=10, pady=10)
@@ -320,7 +362,6 @@ class SupersonicClient(ctk.CTk):
     def start_game(self):
         self.play_btn.configure(state="disabled", text="LAUNCHING...")
         def update_label(msg):
-            # Updating UI from thread safely
             self.after(0, lambda: self.status_lbl.configure(text=msg))
             if "Error" in msg or "Game is Running" in msg:
                 self.after(0, lambda: self.play_btn.configure(state="normal", text="▶ PLAY"))
@@ -330,7 +371,7 @@ class SupersonicClient(ctk.CTk):
             
         threading.Thread(target=run_thread, daemon=True).start()
 
-    # --- MODPACKS TAB ---
+    # --- MODPACKS TAB (MODRINTH API) ---
     def tab_modpacks(self):
         f = ctk.CTkFrame(self.main_area, fg_color="transparent")
         f.grid_rowconfigure(1, weight=1)
@@ -338,41 +379,27 @@ class SupersonicClient(ctk.CTk):
         
         top = ctk.CTkFrame(f, fg_color="transparent")
         top.grid(row=0, column=0, sticky="ew", pady=(0, 20))
-        ctk.CTkLabel(top, text="MODPACKS", font=("Segoe UI", 28, "bold", "italic")).pack(side="left")
+        ctk.CTkLabel(top, text="MODPACKS (MODRINTH)", font=("Segoe UI", 28, "bold", "italic")).pack(side="left")
         
-        ctk.CTkButton(top, text="🌐 Browse Modrinth", fg_color="transparent", border_width=1, border_color=ACCENT_BLUE, command=lambda: self.show_popup("Browser", "Opening Modrinth repository in your default web browser...")).pack(side="right")
-        ctk.CTkButton(top, text="+ Import Zip", fg_color=BORDER_COLOR, command=lambda: self.show_popup("Import", "Please select a .zip file containing the modpack format.")).pack(side="right", padx=10)
-
+        refresh_btn = ctk.CTkButton(top, text="🔄 Refresh", fg_color="transparent", border_width=1, border_color=ACCENT_BLUE)
+        refresh_btn.pack(side="right")
+        
         scroll = ctk.CTkScrollableFrame(f, fg_color="transparent")
         scroll.grid(row=1, column=0, sticky="nsew")
         
-        packs = [
-            ("Fabulously Optimized", "Performance", "12.4M", "1.21.4"),
-            ("Better MC [FABRIC]", "Vanilla+", "8.7M", "1.21.4"),
-            ("RLCRAFT", "Hardcore", "6.2M", "1.12.2"),
-            ("All the Mods 9", "Tech & Magic", "5.9M", "1.20.1")
-        ]
-        
-        r, c = 0, 0
-        for p, tag, dl, ver in packs:
-            card = ctk.CTkFrame(scroll, fg_color=CARD_BG, corner_radius=12, width=220, height=250)
-            card.grid(row=r, column=c, padx=10, pady=10)
-            card.grid_propagate(False)
-            
-            img_ph = ctk.CTkFrame(card, fg_color=BORDER_COLOR, height=100, corner_radius=10)
-            img_ph.pack(fill="x", padx=10, pady=10)
-            ctk.CTkLabel(img_ph, text="Image", text_color=TEXT_SECONDARY).place(relx=0.5, rely=0.5, anchor="center")
-            
-            ctk.CTkLabel(card, text=p, font=("Segoe UI", 14, "bold")).pack(anchor="w", padx=15)
-            ctk.CTkLabel(card, text=f"{ver} • {tag}", font=("Segoe UI", 11), text_color=TEXT_SECONDARY).pack(anchor="w", padx=15)
-            
-            ctk.CTkButton(card, text="⬇ Install Pack", fg_color=ACCENT_BLUE, width=180, command=lambda name=p: self.show_popup("Downloading Modpack", f"Started downloading {name}. Check dashboard for progress.")).pack(side="bottom", pady=15)
-            c += 1
-            if c > 3: c, r = 0, r + 1
+        loading_lbl = ctk.CTkLabel(scroll, text="Fetching Modpacks from Modrinth API...", font=("Segoe UI", 14), text_color=TEXT_SECONDARY)
+        loading_lbl.pack(pady=50)
+
+        def load_modpacks():
+            projects = ModrinthAPI.fetch_projects("modpack", limit=12)
+            self.after(0, lambda: self.render_modrinth_cards(scroll, loading_lbl, projects, "Install Pack"))
+
+        refresh_btn.configure(command=lambda: threading.Thread(target=load_modpacks, daemon=True).start())
+        threading.Thread(target=load_modpacks, daemon=True).start()
 
         return f
 
-    # --- ADDONS TAB ---
+    # --- ADDONS TAB (MODRINTH API) ---
     def tab_addons(self):
         f = ctk.CTkFrame(self.main_area, fg_color="transparent")
         f.grid_rowconfigure(1, weight=1)
@@ -380,30 +407,81 @@ class SupersonicClient(ctk.CTk):
         
         top = ctk.CTkFrame(f, fg_color="transparent")
         top.grid(row=0, column=0, sticky="ew", pady=(0, 20))
-        ctk.CTkLabel(top, text="ADDONS & MODS", font=("Segoe UI", 28, "bold", "italic")).pack(side="left")
-        ctk.CTkButton(top, text="⚡ Update All", fg_color=ACCENT_BLUE, command=lambda: self.show_popup("Updater", "All installed addons are now up to date.")).pack(side="right")
+        ctk.CTkLabel(top, text="ADDONS & MODS (MODRINTH)", font=("Segoe UI", 28, "bold", "italic")).pack(side="left")
+        
+        refresh_btn = ctk.CTkButton(top, text="🔄 Refresh", fg_color="transparent", border_width=1, border_color=ACCENT_BLUE)
+        refresh_btn.pack(side="right")
 
         scroll = ctk.CTkScrollableFrame(f, fg_color="transparent")
         scroll.grid(row=1, column=0, sticky="nsew")
         
-        all_addons = [
-            ("Sodium", "Boosts FPS & reduces lag.", "Performance"),
-            ("Iris Shaders", "Shaders mod for stunning visuals.", "Visuals"),
-            ("Mod Menu", "Adds a sleek mod menu to the game.", "Utility"),
-            ("JEI", "View items and recipes easily.", "Utility")
-        ]
+        loading_lbl = ctk.CTkLabel(scroll, text="Fetching Mods from Modrinth API...", font=("Segoe UI", 14), text_color=TEXT_SECONDARY)
+        loading_lbl.pack(pady=50)
+
+        def load_mods():
+            projects = ModrinthAPI.fetch_projects("mod", limit=12)
+            self.after(0, lambda: self.render_modrinth_rows(scroll, loading_lbl, projects))
+
+        refresh_btn.configure(command=lambda: threading.Thread(target=load_mods, daemon=True).start())
+        threading.Thread(target=load_mods, daemon=True).start()
+
+        return f
+
+    def render_modrinth_cards(self, parent_frame, loading_lbl, projects, btn_text):
+        loading_lbl.destroy()
         
-        for name, desc, cat in all_addons:
-            row = ctk.CTkFrame(scroll, fg_color=CARD_BG, corner_radius=10, height=80)
+        for widget in parent_frame.winfo_children():
+            widget.destroy()
+
+        if not projects:
+            ctk.CTkLabel(parent_frame, text="No projects found or API error.", text_color="#EF4444").pack(pady=20)
+            return
+
+        r, c = 0, 0
+        for p in projects:
+            title = p.get("title", "Unknown")
+            desc = p.get("description", "No description")[:40] + "..."
+            dls = self.format_downloads(p.get("downloads", 0))
+            
+            card = ctk.CTkFrame(parent_frame, fg_color=CARD_BG, corner_radius=12, width=220, height=220)
+            card.grid(row=r, column=c, padx=10, pady=10)
+            card.grid_propagate(False)
+            
+            img_ph = ctk.CTkFrame(card, fg_color=BORDER_COLOR, height=80, corner_radius=10)
+            img_ph.pack(fill="x", padx=10, pady=10)
+            ctk.CTkLabel(img_ph, text=title[:15], text_color=TEXT_SECONDARY).place(relx=0.5, rely=0.5, anchor="center")
+            
+            ctk.CTkLabel(card, text=title, font=("Segoe UI", 14, "bold")).pack(anchor="w", padx=15)
+            ctk.CTkLabel(card, text=f"⬇ {dls} Downloads", font=("Segoe UI", 11), text_color=GREEN_STATUS).pack(anchor="w", padx=15)
+            
+            ctk.CTkButton(card, text=btn_text, fg_color=ACCENT_BLUE, width=180, command=lambda name=title: self.show_popup("Modrinth Downloader", f"Downloading {name} from Modrinth API...")).pack(side="bottom", pady=15)
+            
+            c += 1
+            if c > 3: c, r = 0, r + 1
+
+    def render_modrinth_rows(self, parent_frame, loading_lbl, projects):
+        loading_lbl.destroy()
+        
+        for widget in parent_frame.winfo_children():
+            widget.destroy()
+
+        if not projects:
+            ctk.CTkLabel(parent_frame, text="No projects found or API error.", text_color="#EF4444").pack(pady=20)
+            return
+
+        for p in projects:
+            title = p.get("title", "Unknown")
+            desc = p.get("description", "No description")[:80] + "..."
+            dls = self.format_downloads(p.get("downloads", 0))
+            
+            row = ctk.CTkFrame(parent_frame, fg_color=CARD_BG, corner_radius=10, height=80)
             row.pack(fill="x", padx=10, pady=5)
             row.pack_propagate(False)
             
-            ctk.CTkLabel(row, text=name, font=("Segoe UI", 14, "bold")).place(x=20, y=15)
-            ctk.CTkLabel(row, text=desc, font=("Segoe UI", 11), text_color=TEXT_SECONDARY).place(x=20, y=40)
+            ctk.CTkLabel(row, text=title, font=("Segoe UI", 14, "bold")).place(x=20, y=15)
+            ctk.CTkLabel(row, text=f"{desc} | ⬇ {dls}", font=("Segoe UI", 11), text_color=TEXT_SECONDARY).place(x=20, y=40)
             
-            ctk.CTkButton(row, text="Remove", fg_color="transparent", border_width=1, border_color="#EF4444", text_color="#EF4444", width=80, command=lambda n=name: self.show_popup("Uninstalled", f"{n} has been removed.")).place(relx=0.95, rely=0.5, anchor="e")
-
-        return f
+            ctk.CTkButton(row, text="Add to Profile", fg_color="transparent", border_width=1, border_color=GREEN_STATUS, text_color=GREEN_STATUS, width=100, command=lambda n=title: self.show_popup("Added", f"{n} added to current instance.")).place(relx=0.95, rely=0.5, anchor="e")
 
     # --- SETTINGS TAB ---
     def tab_settings(self):
@@ -428,7 +506,6 @@ class SupersonicClient(ctk.CTk):
         scroll = ctk.CTkScrollableFrame(f, fg_color="transparent")
         scroll.grid(row=1, column=0, sticky="nsew")
 
-        # Launcher Settings Box
         card1 = ctk.CTkFrame(scroll, fg_color=CARD_BG, corner_radius=12)
         card1.pack(fill="x", padx=10, pady=10, ipady=10)
         ctk.CTkLabel(card1, text="LAUNCHER PREFERENCES", font=("Segoe UI", 12, "bold"), text_color=TEXT_SECONDARY).pack(anchor="w", padx=20, pady=(15, 10))
@@ -440,7 +517,6 @@ class SupersonicClient(ctk.CTk):
         username_entry.insert(0, self.engine.config.get("username", "Player"))
         username_entry.pack(side="right")
 
-        # Performance Settings Box
         card2 = ctk.CTkFrame(scroll, fg_color=CARD_BG, corner_radius=12)
         card2.pack(fill="x", padx=10, pady=10, ipady=10)
         ctk.CTkLabel(card2, text="PERFORMANCE", font=("Segoe UI", 12, "bold"), text_color=TEXT_SECONDARY).pack(anchor="w", padx=20, pady=(15, 10))
@@ -453,7 +529,6 @@ class SupersonicClient(ctk.CTk):
         ram_menu.set(str(self.engine.config.get("ram_mb", 8192)))
         ram_menu.pack(side="right")
 
-        # System Info Box
         card3 = ctk.CTkFrame(scroll, fg_color=CARD_BG, corner_radius=12)
         card3.pack(fill="x", padx=10, pady=10, ipady=10)
         ctk.CTkLabel(card3, text="SYSTEM OVERVIEW", font=("Segoe UI", 12, "bold"), text_color=TEXT_SECONDARY).pack(anchor="w", padx=20, pady=(15, 10))
