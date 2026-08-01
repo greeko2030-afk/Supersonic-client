@@ -37,25 +37,51 @@ class ModrinthAPI:
             return [{"title": "Error", "description": "Please 'pip install requests' to use Modrinth API.", "downloads": 0}]
             
         url = f"{ModrinthAPI.BASE_URL}/search"
-        # project_type can be 'mod', 'modpack', 'shader', etc.
         params = {
             "facets": f'[["project_type:{project_type}"]]',
             "limit": limit,
-            "index": "downloads" # Sort by most downloaded
+            "index": "downloads"
         }
         headers = {"User-Agent": ModrinthAPI.USER_AGENT}
         
         try:
             response = requests.get(url, params=params, headers=headers, timeout=10)
             if response.status_code == 200:
-                data = response.json()
-                return data.get("hits", [])
+                return response.json().get("hits", [])
             else:
                 print(f"Modrinth API Error: Status {response.status_code}")
                 return []
         except Exception as e:
             print(f"Modrinth Connection Error: {e}")
             return []
+
+    @staticmethod
+    def get_latest_version_file(project_slug, mc_version="1.21.4", loader="fabric"):
+        """Fetches the actual download URL for the latest matching mod version."""
+        url = f"{ModrinthAPI.BASE_URL}/project/{project_slug}/version"
+        params = {
+            "loaders": f'["{loader}"]',
+            "game_versions": f'["{mc_version}"]'
+        }
+        headers = {"User-Agent": ModrinthAPI.USER_AGENT}
+        
+        try:
+            response = requests.get(url, params=params, headers=headers, timeout=10)
+            if response.status_code == 200:
+                versions = response.json()
+                if not versions:
+                    return None, None
+                
+                # Get the first (latest) version's primary file
+                files = versions[0].get('files', [])
+                primary_file = next((f for f in files if f.get('primary')), files[0] if files else None)
+                
+                if primary_file:
+                    return primary_file['url'], primary_file['filename']
+            return None, None
+        except Exception as e:
+            print(f"Failed to fetch version info: {e}")
+            return None, None
 
 # ==============================================================================
 # ENGINE & CORE LOGIC
@@ -67,6 +93,7 @@ class SupersonicEngine:
         self.system_info = self.get_system_info()
         self.minecraft_directory = minecraft_launcher_lib.utils.get_minecraft_directory()
         self.target_mc_version = "1.21.4"
+        self.target_loader = "fabric"
         self.is_premium = False
 
     def load_config(self):
@@ -121,18 +148,24 @@ class SupersonicEngine:
         }
 
     def generate_jvm_args(self):
+        """Max Optimized Java Arguments for Modern Minecraft (ZGC / High Performance)"""
         ram = self.config.get("ram_mb", 4096)
         return [
             f"-Xms{ram}M", f"-Xmx{ram}M",
-            "-XX:+UseG1GC",
-            "-XX:+UnlockExperimentalVMOptions",
-            "-XX:+DisableExplicitGC",
-            "-Djava.net.preferIPv4Stack=true"
+            "-XX:+UseZGC",                     # Best for modern Minecraft, eliminates micro-stutters
+            "-XX:+ZGenerational",              # Generational ZGC (Java 21+)
+            "-XX:+AlwaysPreTouch",             # Pre-allocates RAM for faster in-game performance
+            "-XX:+DisableExplicitGC",          # Prevents external GC calls that cause lag spikes
+            "-XX:+PerfDisableSharedMem",       # Prevents disk I/O blocks during GC
+            "-O3",                             # Max optimization level
+            "-Djava.net.preferIPv4Stack=true", # Better networking
+            "-Dfile.encoding=UTF-8"
         ]
 
     def launch_minecraft(self, status_callback):
         try:
-            status_callback("Status: Preparing Minecraft...")
+            status_callback("Status: Preparing Fast Launch...")
+            
             if not os.path.exists(self.minecraft_directory):
                 os.makedirs(self.minecraft_directory, exist_ok=True)
 
@@ -145,14 +178,17 @@ class SupersonicEngine:
                 "setMax": lambda m: None
             }
 
-            status_callback(f"Status: Checking/Installing Minecraft {self.target_mc_version}...")
-            
-            # FIXED THE ERROR HERE: Changed 'versionid' to 'version'
-            minecraft_launcher_lib.install.install_minecraft_version(
-                version=self.target_mc_version,
-                minecraft_directory=self.minecraft_directory,
-                callback=callback_dict
-            )
+            # MAX SPEED LAUNCH: Skip verification if already installed
+            version_folder = os.path.join(self.minecraft_directory, "versions", self.target_mc_version)
+            if not os.path.exists(version_folder):
+                status_callback(f"Status: Installing {self.target_mc_version} (First Time)...")
+                minecraft_launcher_lib.install.install_minecraft_version(
+                    version=self.target_mc_version,
+                    minecraft_directory=self.minecraft_directory,
+                    callback=callback_dict
+                )
+            else:
+                status_callback("Status: Game found! Skipping asset checks for max speed...")
 
             status_callback("Status: Generating Launch Command...")
             options = {
@@ -170,7 +206,7 @@ class SupersonicEngine:
                 options=options
             )
 
-            status_callback("Status: Starting Game Engine...")
+            status_callback("Status: Firing up the Game Engine...")
             
             subprocess.Popen(
                 minecraft_command,
@@ -181,9 +217,46 @@ class SupersonicEngine:
         except Exception as e:
             error_msg = str(e)
             if "FileNotFoundError" in error_msg or "java" in error_msg.lower():
-                status_callback("Error: Java is not installed or not in PATH!")
+                status_callback("Error: Java 21+ is not installed or not in PATH!")
             else:
                 status_callback(f"Launch Error: {error_msg}")
+
+    def download_and_install_project(self, project_slug, project_title, project_type, callback):
+        """Actually downloads the mod/modpack into the Minecraft directory."""
+        try:
+            download_url, filename = ModrinthAPI.get_latest_version_file(
+                project_slug, 
+                mc_version=self.target_mc_version, 
+                loader=self.target_loader
+            )
+            
+            if not download_url:
+                callback("Error", f"No valid {self.target_mc_version} Fabric version found for {project_title}.")
+                return
+
+            target_folder = "mods" if project_type == "mod" else "modpacks"
+            install_dir = os.path.join(self.minecraft_directory, target_folder)
+            os.makedirs(install_dir, exist_ok=True)
+            
+            filepath = os.path.join(install_dir, filename)
+            
+            # Skip if already downloaded
+            if os.path.exists(filepath):
+                callback("Info", f"{project_title} is already installed in your {target_folder} folder!")
+                return
+
+            # Download the file
+            response = requests.get(download_url, stream=True)
+            if response.status_code == 200:
+                with open(filepath, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                callback("Success", f"{project_title} has been successfully installed to {target_folder}!")
+            else:
+                callback("Error", f"Failed to download {project_title}. Status code: {response.status_code}")
+                
+        except Exception as e:
+            callback("Error", f"Installation failed: {str(e)}")
 
 
 # ==============================================================================
@@ -273,7 +346,6 @@ class SupersonicClient(ctk.CTk):
             btn.grid(row=i+1, column=0, sticky="ew", padx=15, pady=5)
             self.nav_buttons[name] = btn
 
-        # Account Panel
         acc = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         acc.grid(row=11, column=0, sticky="ew", padx=20, pady=10)
         ctk.CTkLabel(acc, text="Account", font=("Segoe UI", 11), text_color=TEXT_SECONDARY).pack(anchor="w")
@@ -329,29 +401,28 @@ class SupersonicClient(ctk.CTk):
         
         top_a = ctk.CTkFrame(addons_frame, fg_color="transparent")
         top_a.pack(fill="x", padx=20, pady=15)
-        ctk.CTkLabel(top_a, text="⚡ ESSENTIAL MODS", font=("Segoe UI", 14, "bold")).pack(side="left")
-        
-        ctk.CTkButton(top_a, text="⬇ Install All", fg_color="transparent", border_width=1, border_color=ACCENT_BLUE, text_color=ACCENT_BLUE, width=100, command=lambda: self.show_popup("Install Success", "All essential mods have been installed successfully!")).pack(side="right")
+        ctk.CTkLabel(top_a, text="⚡ QUICK INSTALL: ESSENTIALS", font=("Segoe UI", 14, "bold")).pack(side="left")
 
         scroll = ctk.CTkScrollableFrame(addons_frame, fg_color="transparent")
         scroll.pack(fill="both", expand=True, padx=10, pady=10)
 
         quick_addons = [
-            ("Sodium", "Boosts FPS massively"), ("Iris Shaders", "Shaders Mod Support"), 
-            ("Lithium", "Performance Fixes"), ("Indium", "Mod Compatibility"),
-            ("Phosphor", "Lighting Engine"), ("FerriteCore", "Memory Usage Fix"),
-            ("Starlight", "Lighting Optimizer"), ("Entity Culling", "Optimized Entities")
+            ("sodium", "Sodium", "Boosts FPS massively"), 
+            ("iris", "Iris Shaders", "Shaders Mod Support"), 
+            ("lithium", "Lithium", "Performance Fixes"), 
+            ("indium", "Indium", "Mod Compatibility")
         ]
         
         r, c = 0, 0
-        for name, desc in quick_addons:
+        for slug, name, desc in quick_addons:
             card = ctk.CTkFrame(scroll, fg_color="#151B28", corner_radius=8, width=200, height=80)
             card.grid(row=r, column=c, padx=10, pady=10)
             card.grid_propagate(False)
             ctk.CTkLabel(card, text=name, font=("Segoe UI", 13, "bold")).place(x=15, y=10)
             ctk.CTkLabel(card, text=desc, font=("Segoe UI", 11), text_color=TEXT_SECONDARY).place(x=15, y=30)
             
-            btn = ctk.CTkButton(card, text="Install", height=24, width=60, font=("Segoe UI", 10), command=lambda n=name: self.show_popup("Addon Manager", f"{n} has been installed!"))
+            btn = ctk.CTkButton(card, text="Install", height=24, width=60, font=("Segoe UI", 10), 
+                                command=lambda s=slug, n=name: self.install_project_thread(s, n, "mod"))
             btn.place(x=15, y=50)
             
             c += 1
@@ -366,10 +437,16 @@ class SupersonicClient(ctk.CTk):
             if "Error" in msg or "Game is Running" in msg:
                 self.after(0, lambda: self.play_btn.configure(state="normal", text="▶ PLAY"))
 
-        def run_thread():
-            self.engine.launch_minecraft(update_label)
-            
-        threading.Thread(target=run_thread, daemon=True).start()
+        threading.Thread(target=self.engine.launch_minecraft, args=(update_label,), daemon=True).start()
+
+    def install_project_thread(self, slug, title, p_type):
+        """Runs the actual download in a background thread."""
+        self.show_popup("Downloading", f"Fetching {title} from Modrinth API...\nPlease wait.")
+        
+        def callback(status, message):
+            self.after(0, lambda: self.show_popup(status, message))
+
+        threading.Thread(target=self.engine.download_and_install_project, args=(slug, title, p_type, callback), daemon=True).start()
 
     # --- MODPACKS TAB (MODRINTH API) ---
     def tab_modpacks(self):
@@ -392,7 +469,7 @@ class SupersonicClient(ctk.CTk):
 
         def load_modpacks():
             projects = ModrinthAPI.fetch_projects("modpack", limit=12)
-            self.after(0, lambda: self.render_modrinth_cards(scroll, loading_lbl, projects, "Install Pack"))
+            self.after(0, lambda: self.render_modrinth_cards(scroll, loading_lbl, projects, "Install Pack", "modpack"))
 
         refresh_btn.configure(command=lambda: threading.Thread(target=load_modpacks, daemon=True).start())
         threading.Thread(target=load_modpacks, daemon=True).start()
@@ -427,7 +504,7 @@ class SupersonicClient(ctk.CTk):
 
         return f
 
-    def render_modrinth_cards(self, parent_frame, loading_lbl, projects, btn_text):
+    def render_modrinth_cards(self, parent_frame, loading_lbl, projects, btn_text, p_type):
         loading_lbl.destroy()
         
         for widget in parent_frame.winfo_children():
@@ -440,7 +517,7 @@ class SupersonicClient(ctk.CTk):
         r, c = 0, 0
         for p in projects:
             title = p.get("title", "Unknown")
-            desc = p.get("description", "No description")[:40] + "..."
+            slug = p.get("slug", "")
             dls = self.format_downloads(p.get("downloads", 0))
             
             card = ctk.CTkFrame(parent_frame, fg_color=CARD_BG, corner_radius=12, width=220, height=220)
@@ -454,7 +531,8 @@ class SupersonicClient(ctk.CTk):
             ctk.CTkLabel(card, text=title, font=("Segoe UI", 14, "bold")).pack(anchor="w", padx=15)
             ctk.CTkLabel(card, text=f"⬇ {dls} Downloads", font=("Segoe UI", 11), text_color=GREEN_STATUS).pack(anchor="w", padx=15)
             
-            ctk.CTkButton(card, text=btn_text, fg_color=ACCENT_BLUE, width=180, command=lambda name=title: self.show_popup("Modrinth Downloader", f"Downloading {name} from Modrinth API...")).pack(side="bottom", pady=15)
+            ctk.CTkButton(card, text=btn_text, fg_color=ACCENT_BLUE, width=180, 
+                          command=lambda s=slug, t=title, pt=p_type: self.install_project_thread(s, t, pt)).pack(side="bottom", pady=15)
             
             c += 1
             if c > 3: c, r = 0, r + 1
@@ -471,6 +549,7 @@ class SupersonicClient(ctk.CTk):
 
         for p in projects:
             title = p.get("title", "Unknown")
+            slug = p.get("slug", "")
             desc = p.get("description", "No description")[:80] + "..."
             dls = self.format_downloads(p.get("downloads", 0))
             
@@ -481,7 +560,8 @@ class SupersonicClient(ctk.CTk):
             ctk.CTkLabel(row, text=title, font=("Segoe UI", 14, "bold")).place(x=20, y=15)
             ctk.CTkLabel(row, text=f"{desc} | ⬇ {dls}", font=("Segoe UI", 11), text_color=TEXT_SECONDARY).place(x=20, y=40)
             
-            ctk.CTkButton(row, text="Add to Profile", fg_color="transparent", border_width=1, border_color=GREEN_STATUS, text_color=GREEN_STATUS, width=100, command=lambda n=title: self.show_popup("Added", f"{n} added to current instance.")).place(relx=0.95, rely=0.5, anchor="e")
+            ctk.CTkButton(row, text="Add to Profile", fg_color="transparent", border_width=1, border_color=GREEN_STATUS, text_color=GREEN_STATUS, width=100, 
+                          command=lambda s=slug, t=title: self.install_project_thread(s, t, "mod")).place(relx=0.95, rely=0.5, anchor="e")
 
     # --- SETTINGS TAB ---
     def tab_settings(self):
