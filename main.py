@@ -157,7 +157,6 @@ class SupersonicEngine:
             "-XX:+AlwaysPreTouch",             # Pre-allocates RAM for faster in-game performance
             "-XX:+DisableExplicitGC",          # Prevents external GC calls that cause lag spikes
             "-XX:+PerfDisableSharedMem",       # Prevents disk I/O blocks during GC
-            "-O3",                             # Max optimization level
             "-Djava.net.preferIPv4Stack=true", # Better networking
             "-Dfile.encoding=UTF-8"
         ]
@@ -178,19 +177,44 @@ class SupersonicEngine:
                 "setMax": lambda m: None
             }
 
-            # MAX SPEED LAUNCH: Skip verification if already installed
+            # VANILLA CHECK
             version_folder = os.path.join(self.minecraft_directory, "versions", self.target_mc_version)
             if not os.path.exists(version_folder):
-                status_callback(f"Status: Installing {self.target_mc_version} (First Time)...")
+                status_callback(f"Status: Installing {self.target_mc_version} (Vanilla Base)...")
                 minecraft_launcher_lib.install.install_minecraft_version(
                     version=self.target_mc_version,
                     minecraft_directory=self.minecraft_directory,
                     callback=callback_dict
                 )
             else:
-                status_callback("Status: Game found! Skipping asset checks for max speed...")
+                status_callback("Status: Vanilla Base found! Proceeding...")
 
-            status_callback("Status: Generating Launch Command...")
+            # FABRIC CHECK & INSTALLATION (Required for Mods)
+            status_callback("Status: Checking Fabric Loader...")
+            versions_dir = os.path.join(self.minecraft_directory, "versions")
+            os.makedirs(versions_dir, exist_ok=True)
+            
+            fabric_version_name = None
+            # Search for already installed fabric for this version
+            for folder in os.listdir(versions_dir):
+                if folder.startswith("fabric-loader-") and folder.endswith(self.target_mc_version):
+                    fabric_version_name = folder
+                    break
+            
+            # Install Fabric if not found
+            if not fabric_version_name:
+                status_callback("Status: Installing Fabric Loader for Addons...")
+                minecraft_launcher_lib.fabric.install_fabric(self.target_mc_version, self.minecraft_directory, callback=callback_dict)
+                
+                # Fetch the installed folder name
+                for folder in os.listdir(versions_dir):
+                    if folder.startswith("fabric-loader-") and folder.endswith(self.target_mc_version):
+                        fabric_version_name = folder
+                        break
+            
+            launch_version = fabric_version_name if fabric_version_name else self.target_mc_version
+
+            status_callback(f"Status: Generating Launch Command ({launch_version})...")
             options = {
                 "username": self.config["username"],
                 "uuid": self.config["uuid"],
@@ -201,7 +225,7 @@ class SupersonicEngine:
             }
 
             minecraft_command = minecraft_launcher_lib.command.get_minecraft_command(
-                version=self.target_mc_version,
+                version=launch_version,
                 minecraft_directory=self.minecraft_directory,
                 options=options
             )
