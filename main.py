@@ -100,6 +100,7 @@ class CustomModAPI:
 
     @staticmethod
     def get_download_url(mod_id):
+        # Generates stream URL: https://supersonic-client--Greeko2030.replit.app/api/mods/file/{mod_id}
         return f"{CustomModAPI.BASE_URL}/file/{mod_id}"
 
 
@@ -214,7 +215,7 @@ class SupersonicEngine:
             status_callback(f"Launch Error: {str(e)}")
 
     def download_and_install_project(self, project_slug, project_title, project_type, source, callback, custom_mod_id=None):
-        """Unified downloader for Modrinth and Custom API."""
+        """Unified binary stream downloader for Modrinth and Custom Object Storage API."""
         try:
             download_url = None
             filename = None
@@ -229,45 +230,44 @@ class SupersonicEngine:
 
             elif source == "custom":
                 if custom_mod_id is None:
-                    callback("Error", "Missing mod ID for Custom API. Data might be corrupted.")
+                    callback("Error", "Missing mod ID for Custom API execution.")
                     return
                 download_url = CustomModAPI.get_download_url(custom_mod_id)
-                filename = f"{project_slug}-{self.target_mc_version}.jar" 
+                filename = f"{project_slug}.jar" # Default fallback name
                 
             else:
-                callback("Error", "Unknown source provided.")
+                callback("Error", "Unknown source type provided.")
                 return
 
-            target_folder = "mods" if project_type == "mod" else "modpacks"
-            install_dir = os.path.join(self.minecraft_directory, target_folder)
-            os.makedirs(install_dir, exist_ok=True)
-            
-            filepath = os.path.join(install_dir, filename)
-            if os.path.exists(filepath):
-                callback("Info", f"{project_title} is already installed!")
-                return
-
-            # Request execution
+            # Execute HTTP GET binary stream request
             response = requests.get(download_url, stream=True)
             
             if response.status_code == 200:
+                # Try to extract actual filename from server headers if provided
+                content_disposition = response.headers.get("Content-Disposition")
+                if content_disposition and "filename=" in content_disposition:
+                    extracted_name = content_disposition.split("filename=")[1].strip('"\'' )
+                    if extracted_name:
+                        filename = extracted_name
+
+                target_folder = "mods" if project_type == "mod" else "modpacks"
+                install_dir = os.path.join(self.minecraft_directory, target_folder)
+                os.makedirs(install_dir, exist_ok=True)
+                
+                filepath = os.path.join(install_dir, filename)
+
+                # Write binary stream chunk by chunk directly to file system
                 with open(filepath, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                callback("Success", f"{project_title} has been installed from {source.capitalize()}!")
+                        if chunk:
+                            f.write(chunk)
+                            
+                callback("Success", f"{project_title} successfully downloaded and installed to mods folder!")
             else:
-                # Enhanced Error Logging for Debugging Server Issues (HTTP 500)
-                error_msg = f"Failed to download. Status: {response.status_code}"
-                if response.status_code == 500:
-                    server_response = response.text[:100] if response.text else "No extra details."
-                    error_msg += f"\n\nServer Error 500: Please check your Replit logs.\nURL Hit: {download_url}\nResponse: {server_response}"
-                elif response.status_code == 404:
-                    error_msg += f"\n\nFile not found on server.\nURL Hit: {download_url}"
-                    
-                callback("Error", error_msg)
+                callback("Error", f"Failed to download file stream. Status Code: {response.status_code}\nURL: {download_url}")
                 
         except Exception as e:
-            callback("Error", f"Installation failed: {str(e)}")
+            callback("Error", f"Installation failed due to stream exception: {str(e)}")
 
 
 # ==============================================================================
@@ -312,17 +312,17 @@ class SupersonicClient(ctk.CTk):
     def show_popup(self, title, message):
         popup = ctk.CTkToplevel(self)
         popup.title(title)
-        popup.geometry("450x220") # Increased size for longer error messages
+        popup.geometry("420x200")
         popup.attributes("-topmost", True)
         popup.configure(fg_color=CARD_BG)
         
         popup.update_idletasks()
-        x = self.winfo_x() + (self.winfo_width() // 2) - (450 // 2)
-        y = self.winfo_y() + (self.winfo_height() // 2) - (220 // 2)
+        x = self.winfo_x() + (self.winfo_width() // 2) - (420 // 2)
+        y = self.winfo_y() + (self.winfo_height() // 2) - (200 // 2)
         popup.geometry(f"+{x}+{y}")
 
-        lbl = ctk.CTkLabel(popup, text=message, font=("Segoe UI", 12), text_color=TEXT_PRIMARY, wraplength=400, justify="left")
-        lbl.pack(pady=(20, 20), padx=20)
+        lbl = ctk.CTkLabel(popup, text=message, font=("Segoe UI", 12), text_color=TEXT_PRIMARY, wraplength=380, justify="center")
+        lbl.pack(pady=(25, 20), padx=20)
         
         ctk.CTkButton(popup, text="OK", fg_color=ACCENT_BLUE, width=100, command=popup.destroy).pack(side="bottom", pady=20)
 
@@ -385,7 +385,7 @@ class SupersonicClient(ctk.CTk):
         threading.Thread(target=self.engine.launch_minecraft, args=(update_label,), daemon=True).start()
 
     def install_project_thread(self, slug, title, p_type, source="modrinth", custom_mod_id=None):
-        self.show_popup("Downloading", f"Fetching {title} from {source.capitalize()}...\nPlease wait.")
+        self.show_popup("Downloading", f"Downloading {title}...\nPlease wait while stream is being saved.")
         def callback(status, message):
             self.after(0, lambda: self.show_popup(status, message))
         threading.Thread(
@@ -421,7 +421,7 @@ class SupersonicClient(ctk.CTk):
 
         return frame
 
-    # --- CUSTOM MODS TAB (YOUR REPLIT API) ---
+    # --- CUSTOM MODS TAB ---
     def tab_custom_mods(self):
         f = ctk.CTkFrame(self.main_area, fg_color="transparent")
         f.grid_rowconfigure(1, weight=1)
@@ -437,7 +437,7 @@ class SupersonicClient(ctk.CTk):
         scroll = ctk.CTkScrollableFrame(f, fg_color="transparent")
         scroll.grid(row=1, column=0, sticky="nsew")
         
-        loading_lbl = ctk.CTkLabel(scroll, text="Fetching Custom Mods from your server...", font=("Segoe UI", 14), text_color=TEXT_SECONDARY)
+        loading_lbl = ctk.CTkLabel(scroll, text="Fetching Custom Mods from server...", font=("Segoe UI", 14), text_color=TEXT_SECONDARY)
         loading_lbl.pack(pady=50)
 
         def load_custom_mods():
@@ -454,11 +454,10 @@ class SupersonicClient(ctk.CTk):
         for widget in parent_frame.winfo_children(): widget.destroy()
 
         if not projects:
-            ctk.CTkLabel(parent_frame, text="No custom mods found on your server.", text_color=TEXT_SECONDARY).pack(pady=20)
+            ctk.CTkLabel(parent_frame, text="No custom mods found on server.", text_color=TEXT_SECONDARY).pack(pady=20)
             return
 
         for p in projects:
-            # Fallback for ID if 'id' is not present but '_id' is (common in MongoDB)
             mod_id = p.get("id") or p.get("_id")
             title = p.get("name", "Unknown Mod")
             slug = p.get("slug", title.lower().replace(" ", "-"))
