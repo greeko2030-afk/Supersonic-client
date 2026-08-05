@@ -92,7 +92,6 @@ class CustomModAPI:
             response = requests.get(CustomModAPI.BASE_URL, params=params, timeout=10)
             if response.status_code == 200:
                 data = response.json()
-                # Returns the 'mods' array from the JSON response
                 return data.get("mods", [])
             return []
         except Exception as e:
@@ -101,7 +100,6 @@ class CustomModAPI:
 
     @staticmethod
     def get_download_url(mod_id):
-        # Uses the file download endpoint defined in the custom API
         return f"{CustomModAPI.BASE_URL}/file/{mod_id}"
 
 
@@ -230,11 +228,11 @@ class SupersonicEngine:
                     return
 
             elif source == "custom":
-                if not custom_mod_id:
-                    callback("Error", "Missing mod ID for Custom API.")
+                if custom_mod_id is None:
+                    callback("Error", "Missing mod ID for Custom API. Data might be corrupted.")
                     return
                 download_url = CustomModAPI.get_download_url(custom_mod_id)
-                filename = f"{project_slug}-{self.target_mc_version}.jar" # Force format for custom mods
+                filename = f"{project_slug}-{self.target_mc_version}.jar" 
                 
             else:
                 callback("Error", "Unknown source provided.")
@@ -249,14 +247,24 @@ class SupersonicEngine:
                 callback("Info", f"{project_title} is already installed!")
                 return
 
+            # Request execution
             response = requests.get(download_url, stream=True)
+            
             if response.status_code == 200:
                 with open(filepath, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
                 callback("Success", f"{project_title} has been installed from {source.capitalize()}!")
             else:
-                callback("Error", f"Failed to download. Status: {response.status_code}")
+                # Enhanced Error Logging for Debugging Server Issues (HTTP 500)
+                error_msg = f"Failed to download. Status: {response.status_code}"
+                if response.status_code == 500:
+                    server_response = response.text[:100] if response.text else "No extra details."
+                    error_msg += f"\n\nServer Error 500: Please check your Replit logs.\nURL Hit: {download_url}\nResponse: {server_response}"
+                elif response.status_code == 404:
+                    error_msg += f"\n\nFile not found on server.\nURL Hit: {download_url}"
+                    
+                callback("Error", error_msg)
                 
         except Exception as e:
             callback("Error", f"Installation failed: {str(e)}")
@@ -276,7 +284,7 @@ TEXT_SECONDARY = "#8A93A6"
 GREEN_STATUS = "#10B981"
 SIDEBAR_BG = "#0A0D14"
 BORDER_COLOR = "#1E293B"
-CUSTOM_BRAND_COLOR = "#F59E0B" # Amber for custom mods
+CUSTOM_BRAND_COLOR = "#F59E0B"
 
 class SupersonicClient(ctk.CTk):
     def __init__(self):
@@ -304,17 +312,19 @@ class SupersonicClient(ctk.CTk):
     def show_popup(self, title, message):
         popup = ctk.CTkToplevel(self)
         popup.title(title)
-        popup.geometry("350x150")
+        popup.geometry("450x220") # Increased size for longer error messages
         popup.attributes("-topmost", True)
         popup.configure(fg_color=CARD_BG)
         
         popup.update_idletasks()
-        x = self.winfo_x() + (self.winfo_width() // 2) - (350 // 2)
-        y = self.winfo_y() + (self.winfo_height() // 2) - (150 // 2)
+        x = self.winfo_x() + (self.winfo_width() // 2) - (450 // 2)
+        y = self.winfo_y() + (self.winfo_height() // 2) - (220 // 2)
         popup.geometry(f"+{x}+{y}")
 
-        ctk.CTkLabel(popup, text=message, font=("Segoe UI", 14), text_color=TEXT_PRIMARY, wraplength=300).pack(pady=(30, 20))
-        ctk.CTkButton(popup, text="OK", fg_color=ACCENT_BLUE, width=100, command=popup.destroy).pack()
+        lbl = ctk.CTkLabel(popup, text=message, font=("Segoe UI", 12), text_color=TEXT_PRIMARY, wraplength=400, justify="left")
+        lbl.pack(pady=(20, 20), padx=20)
+        
+        ctk.CTkButton(popup, text="OK", fg_color=ACCENT_BLUE, width=100, command=popup.destroy).pack(side="bottom", pady=20)
 
     def format_downloads(self, num):
         if num >= 1000000: return f"{num/1000000:.1f}M"
@@ -333,7 +343,7 @@ class SupersonicClient(ctk.CTk):
 
         nav_items = [
             ("Dashboard", "🏠"), 
-            ("Custom Mods", "⭐"), # Added Custom Mods Tab
+            ("Custom Mods", "⭐"), 
             ("Modrinth Mods", "⚡"), 
             ("Settings", "⚙️")
         ]
@@ -431,7 +441,6 @@ class SupersonicClient(ctk.CTk):
         loading_lbl.pack(pady=50)
 
         def load_custom_mods():
-            # Fetches from your provided replit URL
             projects = CustomModAPI.fetch_projects()
             self.after(0, lambda: self.render_custom_rows(scroll, loading_lbl, projects))
 
@@ -449,8 +458,8 @@ class SupersonicClient(ctk.CTk):
             return
 
         for p in projects:
-            # Assuming your API returns id, name, description, category, version etc.
-            mod_id = p.get("id")
+            # Fallback for ID if 'id' is not present but '_id' is (common in MongoDB)
+            mod_id = p.get("id") or p.get("_id")
             title = p.get("name", "Unknown Mod")
             slug = p.get("slug", title.lower().replace(" ", "-"))
             desc = p.get("description", "No description provided.")[:80] + "..."
@@ -464,7 +473,6 @@ class SupersonicClient(ctk.CTk):
             ctk.CTkLabel(row, text=f"{title} ({version})", font=("Segoe UI", 14, "bold")).place(x=20, y=15)
             ctk.CTkLabel(row, text=f"[{category.upper()}] {desc}", font=("Segoe UI", 11), text_color=TEXT_SECONDARY).place(x=20, y=40)
             
-            # Using source="custom" here and passing the custom mod_id
             ctk.CTkButton(
                 row, text="Download", fg_color=CUSTOM_BRAND_COLOR, hover_color="#D97706", text_color="#000", width=100, 
                 command=lambda s=slug, t=title, mid=mod_id: self.install_project_thread(s, t, "mod", source="custom", custom_mod_id=mid)
