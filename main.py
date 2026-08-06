@@ -2,7 +2,6 @@ import os
 import sys
 import json
 import uuid
-import time
 import threading
 import subprocess
 import platform
@@ -12,12 +11,6 @@ import minecraft_launcher_lib
 # ==============================================================================
 # SAFE DEPENDENCY IMPORTS & FALLBACKS
 # ==============================================================================
-try:
-    import psutil
-    PSUTIL_AVAILABLE = True
-except ImportError:
-    PSUTIL_AVAILABLE = False
-
 try:
     import requests
     REQUESTS_AVAILABLE = True
@@ -74,7 +67,7 @@ class ModrinthAPI:
             return None, None
 
 # ==============================================================================
-# ENGINE & CORE LOGIC (CRASH FIXED & OPTIMIZATION ADDED)
+# ENGINE & CORE LOGIC
 # ==============================================================================
 class SupersonicEngine:
     def __init__(self):
@@ -84,11 +77,10 @@ class SupersonicEngine:
         self.target_mc_version = "1.21.4"
         self.target_loader = "fabric"
         
-        # ⚠️ পুরনো renderculling মডটি 1.21.4 এ ক্র্যাশ করায় এটি আপাতত অফ রাখা হলো
-        self.GITHUB_MOD_URL = "https://raw.githubusercontent.com/greeko2030-afk/Supersonic-client/main/renderculling-1.0.0.jar"
+        # The custom mod causing the crash
         self.CUSTOM_MOD_NAME = "renderculling-1.0.0.jar"
 
-        # 🚀 Fabulously Optimized এর বিকল্প (আপাতত ফাকা লিংক দেওয়া আছে, চাইলে ডিরেক্ট লিংক বসাতে পারেন)
+        # Direct links for Fabulously Optimized alternatives can be placed here
         self.PERFORMANCE_MODS = {
             "sodium.jar": "URL_HERE", 
             "lithium.jar": "URL_HERE",
@@ -101,7 +93,8 @@ class SupersonicEngine:
             try:
                 with open(self.config_file, "r", encoding="utf-8") as f:
                     return json.load(f)
-            except Exception: return default_config
+            except Exception: 
+                return default_config
         return default_config
 
     def generate_jvm_args(self):
@@ -111,6 +104,18 @@ class SupersonicEngine:
             "-XX:+UseZGC", "-XX:+ZGenerational",
             "-Djava.net.preferIPv4Stack=true", "-Dfile.encoding=UTF-8"
         ]
+
+    def clean_incompatible_mods(self, status_callback):
+        """Deletes the specific mod file that is causing the 1.21.4 crash if it exists in the mods folder."""
+        mods_dir = os.path.join(self.minecraft_directory, "mods")
+        bad_mod_path = os.path.join(mods_dir, self.CUSTOM_MOD_NAME)
+        
+        if os.path.exists(bad_mod_path):
+            status_callback(f"Status: Removing incompatible mod ({self.CUSTOM_MOD_NAME})...")
+            try:
+                os.remove(bad_mod_path)
+            except Exception as e:
+                print(f"Failed to remove {self.CUSTOM_MOD_NAME}: {e}")
 
     def install_performance_mods(self, status_callback):
         mods_dir = os.path.join(self.minecraft_directory, "mods")
@@ -144,6 +149,7 @@ class SupersonicEngine:
             install_dir = os.path.join(self.minecraft_directory, target_folder)
             os.makedirs(install_dir, exist_ok=True)
             filepath = os.path.join(install_dir, filename)
+            
             response = requests.get(download_url, stream=True)
             if response.status_code == 200:
                 with open(filepath, 'wb') as f:
@@ -161,11 +167,13 @@ class SupersonicEngine:
             os.makedirs(self.minecraft_directory, exist_ok=True)
             callback_dict = {"setStatus": lambda s: status_callback(f"Status: {s}")}
 
+            # 1. Check and Install Vanilla Minecraft
             version_folder = os.path.join(self.minecraft_directory, "versions", self.target_mc_version)
             if not os.path.exists(version_folder):
                 status_callback(f"Status: Installing {self.target_mc_version} Vanilla...")
                 minecraft_launcher_lib.install.install_minecraft_version(self.target_mc_version, self.minecraft_directory, callback=callback_dict)
 
+            # 2. Check and Install Fabric
             status_callback("Status: Checking Fabric installation...")
             installed_versions = minecraft_launcher_lib.utils.get_installed_versions(self.minecraft_directory)
             fabric_version = next((ver["id"] for ver in installed_versions if "fabric" in ver["id"].lower() and self.target_mc_version in ver["id"]), None)
@@ -177,8 +185,14 @@ class SupersonicEngine:
                 fabric_version = next((ver["id"] for ver in installed_versions if "fabric" in ver["id"].lower() and self.target_mc_version in ver["id"]), None)
             
             launch_version = fabric_version if fabric_version else self.target_mc_version
+            
+            # 3. Clean incompatible mods before launching to prevent crashes
+            self.clean_incompatible_mods(status_callback)
+            
+            # 4. Install performance mods if URLs are provided
             self.install_performance_mods(status_callback)
 
+            # 5. Launch Game
             options = {
                 "username": self.config["username"],
                 "uuid": self.config["uuid"],
@@ -199,7 +213,7 @@ class SupersonicEngine:
             status_callback(f"Launch Error: {str(e)}")
 
 # ==============================================================================
-# USER INTERFACE CONSTRUCTION (TOP TABS)
+# USER INTERFACE CONSTRUCTION
 # ==============================================================================
 ctk.set_appearance_mode("Dark")
 BG_DARK = "#05070D"
@@ -352,10 +366,15 @@ class SupersonicClient(ctk.CTk):
             ctk.CTkLabel(parent_frame, text="No projects found for this category.", text_color="#EF4444").pack(pady=20)
             return
         for p in projects:
-            title, slug, desc, dls = p.get("title", "Unknown"), p.get("slug", ""), p.get("description", "")[:90] + "...", self.format_downloads(p.get("downloads", 0))
+            title = p.get("title", "Unknown")
+            slug = p.get("slug", "")
+            desc = p.get("description", "")[:90] + "..."
+            dls = self.format_downloads(p.get("downloads", 0))
+            
             row = ctk.CTkFrame(parent_frame, fg_color=CARD_BG, corner_radius=10, height=80)
             row.pack(fill="x", padx=10, pady=5)
             row.pack_propagate(False)
+            
             ctk.CTkLabel(row, text=title, font=("Segoe UI", 15, "bold")).place(x=20, y=15)
             ctk.CTkLabel(row, text=f"{desc} | ⬇ {dls}", font=("Segoe UI", 12), text_color=TEXT_SECONDARY).place(x=20, y=40)
             ctk.CTkButton(row, text="Install", fg_color="transparent", border_width=1, border_color=GREEN_STATUS, text_color=GREEN_STATUS, width=100, command=lambda s=slug, t=title, pt=project_type: self.install_project_thread(s, t, pt)).place(relx=0.95, rely=0.5, anchor="e")
