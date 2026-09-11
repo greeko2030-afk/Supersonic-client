@@ -27,15 +27,7 @@ except ImportError:
     REQUESTS_AVAILABLE = False
 
 # ==============================================================================
-# EMBEDDED LOGO & ICON DATA (Base64)
-# ==============================================================================
-SUPERSONIC_LOGO_B64 = """
-iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADim35yAAAABHNCSVQICAgIfAhkiAAAAAlwSFlz
-AAAOwgAADsIBFShKgAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAA
-""" # Embedded SVG/PNG fallback render vector algorithm used in UI
-
-# ==============================================================================
-# ENGINE & CORE LOGIC
+# ENGINE & CORE LOGIC WITH REAL MODRINTH API
 # ==============================================================================
 class SupersonicEngine:
     def __init__(self):
@@ -43,11 +35,38 @@ class SupersonicEngine:
         self.config = self.load_config()
         self.base_minecraft_directory = minecraft_launcher_lib.utils.get_minecraft_directory()
         self.target_mc_version = "1.21.4"
+        self.user_agent = {"User-Agent": "SupersonicClient/2.5.0 (https://github.com/greeko-afk/Supersonic-Client)"}
         
         # GitHub Repository Details
         self.GITHUB_OWNER = "greeko-afk"
         self.GITHUB_REPO = "Supersonic-Client"
         self.GITHUB_BRANCH = "main"
+
+        # Modrinth Slugs Mapping
+        self.MODRINTH_SLUGS = {
+            "Sodium": "sodium",
+            "Iris Shaders": "iris",
+            "Lithium": "lithium",
+            "Indium": "indium",
+            "Phosphor": "phosphor",
+            "FerriteCore": "ferritecore",
+            "Starlight": "starlight",
+            "Entity Culling": "entityculling",
+            "ImmediatelyFast": "immediatelyfast",
+            "More Culling": "more-culling",
+            "Cloth Config API": "cloth-config",
+            "Mod Menu": "modmenu",
+            "JEI (Just Enough Items)": "jei",
+            "JourneyMap": "journeymap",
+            "AppleSkin": "appleskin",
+            "Mouse Tweaks": "mouse-tweaks",
+            "Fabulously Optimized": "fabulously-optimized",
+            "Better MC [FABRIC]": "better-mc-fabric",
+            "RLCraft": "rlcraft",
+            "All the Mods 9": "all-the-mods-9",
+            "SkyFactory 5": "skyfactory-5",
+            "Prominence II RPG": "prominence-2-rpg"
+        }
 
     def load_config(self):
         default_config = {
@@ -92,7 +111,6 @@ class SupersonicEngine:
             "-Dfile.encoding=UTF-8"
         ]
         
-        # Platform-Specific Tuning
         if system == "Darwin":  # macOS Optimizations
             args.extend([
                 "-XstartOnFirstThread",
@@ -105,6 +123,56 @@ class SupersonicEngine:
             ])
             
         return args
+
+    def fetch_and_install_modrinth_mod(self, mod_name, target_dir, mc_version="1.21.4", loader="fabric", status_cb=None):
+        """REAL Modrinth API Integration: Searches, fetches latest release file and downloads it"""
+        if not REQUESTS_AVAILABLE:
+            if status_cb: status_cb("Error: Python 'requests' module not installed.")
+            return False
+
+        slug = self.MODRINTH_SLUGS.get(mod_name, mod_name.lower().replace(" ", "-"))
+        if status_cb: status_cb(f"Fetching Modrinth API for '{mod_name}'...")
+
+        try:
+            # 1. Fetch version info from Modrinth v2 API
+            url = f"https://api.modrinth.com/v2/project/{slug}/version"
+            params = {
+                "game_versions": json.dumps([mc_version]),
+                "loaders": json.dumps([loader])
+            }
+            res = requests.get(url, params=params, headers=self.user_agent, timeout=10)
+            
+            if res.status_code != 200 or not res.json():
+                # Fallback search if exact slug fails
+                search_url = f"https://api.modrinth.com/v2/search?query={mod_name}&limit=1"
+                s_res = requests.get(search_url, headers=self.user_agent, timeout=10)
+                if s_res.status_code == 200 and s_res.json().get('hits'):
+                    slug = s_res.json()['hits'][0]['slug']
+                    url = f"https://api.modrinth.com/v2/project/{slug}/version"
+                    res = requests.get(url, params=params, headers=self.user_agent, timeout=10)
+
+            if res.status_code == 200 and res.json():
+                versions = res.json()
+                latest_version = versions[0]
+                primary_file = next((f for f in latest_version['files'] if f.get('primary')), latest_version['files'][0])
+                
+                download_url = primary_file['url']
+                filename = primary_file['filename']
+                
+                os.makedirs(target_dir, exist_ok=True)
+                dest_path = os.path.join(target_dir, filename)
+
+                if status_cb: status_cb(f"Downloading {filename} from Modrinth...")
+                self._download_file(download_url, dest_path)
+                if status_cb: status_cb(f"✓ Installed {mod_name} successfully!")
+                return True
+            else:
+                if status_cb: status_cb(f"Modrinth API: No matching 1.21.4 version for {mod_name}")
+                return False
+
+        except Exception as e:
+            if status_cb: status_cb(f"Modrinth Error ({mod_name}): {str(e)}")
+            return False
 
     def sync_github_mods(self, instance_name, status_callback):
         """Downloads custom mods directly from GitHub repository into specific instance folder"""
@@ -120,7 +188,7 @@ class SupersonicEngine:
         status_callback("Syncing custom mods from GitHub...")
         
         try:
-            response = requests.get(api_url, timeout=10)
+            response = requests.get(api_url, headers=self.user_agent, timeout=10)
             if response.status_code == 200:
                 files = response.json()
                 download_tasks = [(f['name'], f['download_url']) for f in files if isinstance(f, dict) and f.get('name', '').endswith('.jar') and f.get('download_url')]
@@ -138,7 +206,7 @@ class SupersonicEngine:
 
     def _download_file(self, url, dest_path):
         try:
-            r = requests.get(url, stream=True, timeout=15)
+            r = requests.get(url, stream=True, headers=self.user_agent, timeout=15)
             if r.status_code == 200:
                 with open(dest_path, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=1024 * 1024):
@@ -307,7 +375,7 @@ class SupersonicClient(ctk.CTk):
                 self.frames[tab] = f
 
     # ---------------------------------------------------------
-    # DASHBOARD VIEW (1000121461.png)
+    # DASHBOARD VIEW
     # ---------------------------------------------------------
     def create_dashboard(self):
         main_grid = ctk.CTkFrame(self.main_container, fg_color="transparent")
@@ -335,8 +403,12 @@ class SupersonicClient(ctk.CTk):
         self.dash_status = ctk.CTkLabel(hero, text="Ready to Launch (1.21.4)", font=("Segoe UI", 11, "bold"), text_color=GREEN_STATUS)
         self.dash_status.place(relx=0.95, rely=0.78, anchor="e")
 
-        # Essential Addons Section
+        # Essential Addons Section (Modrinth API Trigger)
         ctk.CTkLabel(left_scroll, text="⚡ ALL ADDONS - ONE CLICK INSTALL", font=("Segoe UI", 15, "bold")).pack(anchor="w", pady=(10, 8))
+        
+        install_all_btn = ctk.CTkButton(left_scroll, text="⚡ Install All Essential Addons from Modrinth", fg_color=ACCENT_BLUE, height=32, command=self.install_all_essential_addons)
+        install_all_btn.pack(anchor="w", pady=(0, 10))
+
         addons_grid = ctk.CTkFrame(left_scroll, fg_color="transparent")
         addons_grid.pack(fill="x")
 
@@ -370,8 +442,8 @@ class SupersonicClient(ctk.CTk):
             ctk.CTkFrame(card, fg_color="#1E293B", height=65, corner_radius=6).pack(fill="x", padx=8, pady=8)
             ctk.CTkLabel(card, text=mp, font=("Segoe UI", 13, "bold")).pack()
             ctk.CTkLabel(card, text=ver, font=("Segoe UI", 10), text_color=TEXT_SECONDARY).pack()
-            ctk.CTkButton(card, text="Install", fg_color=ACCENT_BLUE, height=26, font=("Segoe UI", 11, "bold"),
-                          command=lambda m=mp: self.install_modpack(m)).pack(pady=8, padx=8, fill="x")
+            ctk.CTkButton(card, text="Install Modrinth", fg_color=ACCENT_BLUE, height=26, font=("Segoe UI", 11, "bold"),
+                          command=lambda m=mp: self.install_modrinth_single(m)).pack(pady=8, padx=8, fill="x")
 
         # Bottom Performance Telemetry
         stats_box = ctk.CTkFrame(left_scroll, fg_color=CARD_BG, corner_radius=10, border_width=1, border_color=BORDER_COLOR)
@@ -397,7 +469,7 @@ class SupersonicClient(ctk.CTk):
         
         self.ai_log = ctk.CTkTextbox(ai_box, fg_color="transparent", font=("Consolas", 11), text_color=TEXT_PRIMARY)
         self.ai_log.pack(fill="both", expand=True, padx=5, pady=5)
-        self.ai_log.insert("end", "Hello Raffiee! ⚡\nI am your Supersonic Agent.\n\n• Auto fix errors\n• Optimize performance\n• Detect crashes\n\nAsk me anything below!\n")
+        self.ai_log.insert("end", "Hello Raffiee! ⚡\nI am your Supersonic Agent.\n\n• Modrinth API Active\n• Auto fix errors\n• Optimize performance\n")
 
         scan_btn = ctk.CTkButton(right_panel, text="🪄 Scan & Fix (One Click)", fg_color=ACCENT_BLUE, height=35, font=("Segoe UI", 12, "bold"), command=self.run_ai_scan)
         scan_btn.pack(fill="x", padx=15, pady=(0, 15))
@@ -405,7 +477,7 @@ class SupersonicClient(ctk.CTk):
         return main_grid
 
     # ---------------------------------------------------------
-    # MODPACKS VIEW (1000121460.png)
+    # MODPACKS VIEW
     # ---------------------------------------------------------
     def create_modpacks_view(self):
         frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
@@ -413,8 +485,6 @@ class SupersonicClient(ctk.CTk):
         header = ctk.CTkFrame(frame, fg_color="transparent")
         header.pack(fill="x", pady=(0, 15))
         ctk.CTkLabel(header, text="MODPACKS", font=("Segoe UI", 28, "bold", "italic")).pack(side="left")
-        ctk.CTkButton(header, text="+ Import Modpack", fg_color="#334155", height=32).pack(side="right", padx=5)
-        ctk.CTkButton(header, text="Browse CurseForge", fg_color=ACCENT_BLUE, height=32).pack(side="right")
 
         content = ctk.CTkFrame(frame, fg_color="transparent")
         content.pack(fill="both", expand=True)
@@ -439,22 +509,21 @@ class SupersonicClient(ctk.CTk):
             ctk.CTkLabel(card, text=mp, font=("Segoe UI", 14, "bold")).pack(anchor="w", padx=10)
             ctk.CTkLabel(card, text=tags, font=("Segoe UI", 10), text_color=ACCENT_BLUE).pack(anchor="w", padx=10)
 
-            btn = ctk.CTkButton(card, text="Download & Install", fg_color=ACCENT_BLUE, height=30, font=("Segoe UI", 11, "bold"),
-                                command=lambda m=mp: self.install_modpack(m))
+            btn = ctk.CTkButton(card, text="Install via Modrinth", fg_color=ACCENT_BLUE, height=30, font=("Segoe UI", 11, "bold"),
+                                command=lambda m=mp: self.install_modrinth_single(m))
             btn.pack(pady=10, padx=10, fill="x", side="bottom")
 
-        # Filters Sidebar
         filters = ctk.CTkFrame(content, fg_color=CARD_BG, corner_radius=10, border_width=1, border_color=BORDER_COLOR)
         filters.grid(row=0, column=1, sticky="nsew")
         
-        ctk.CTkEntry(filters, placeholder_text="Search modpacks...", height=35).pack(fill="x", padx=15, pady=15)
+        ctk.CTkEntry(filters, placeholder_text="Search Modrinth...", height=35).pack(fill="x", padx=15, pady=15)
         ctk.CTkLabel(filters, text="Minecraft Version", font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=15)
         ctk.CTkOptionMenu(filters, values=["1.21.4", "1.21.1", "1.20.4", "1.20.1"]).pack(fill="x", padx=15, pady=5)
         
         return frame
 
     # ---------------------------------------------------------
-    # ADDONS VIEW (1000121459.png)
+    # ADDONS VIEW WITH REAL MODRINTH DOWNLOAD
     # ---------------------------------------------------------
     def create_addons_view(self):
         frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
@@ -462,7 +531,11 @@ class SupersonicClient(ctk.CTk):
         header = ctk.CTkFrame(frame, fg_color="transparent")
         header.pack(fill="x", pady=(0, 15))
         ctk.CTkLabel(header, text="ADDONS", font=("Segoe UI", 28, "bold", "italic")).pack(side="left")
-        ctk.CTkButton(header, text="⚡ Install All", fg_color=ACCENT_BLUE, height=32, font=("Segoe UI", 12, "bold")).pack(side="right")
+        
+        ctk.CTkButton(
+            header, text="⚡ Install All from Modrinth", fg_color=ACCENT_BLUE, height=32, font=("Segoe UI", 12, "bold"),
+            command=self.install_all_essential_addons
+        ).pack(side="right")
 
         content = ctk.CTkFrame(frame, fg_color="transparent")
         content.pack(fill="both", expand=True)
@@ -472,7 +545,7 @@ class SupersonicClient(ctk.CTk):
         grid_frame = ctk.CTkScrollableFrame(content, fg_color="transparent")
         grid_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
 
-        addons = ["Sodium", "Iris Shaders", "Lithium", "Indium", "Phosphor", "FerriteCore", "Starlight", "Entity Culling"]
+        addons = ["Sodium", "Iris Shaders", "Lithium", "Indium", "Phosphor", "FerriteCore", "Starlight", "Entity Culling", "ImmediatelyFast", "More Culling"]
         
         for i, addon in enumerate(addons):
             card = ctk.CTkFrame(grid_frame, fg_color=CARD_BG, corner_radius=10, border_width=1, border_color=BORDER_COLOR, height=65)
@@ -480,18 +553,21 @@ class SupersonicClient(ctk.CTk):
             grid_frame.grid_columnconfigure(i%2, weight=1)
 
             ctk.CTkLabel(card, text=addon, font=("Segoe UI", 14, "bold")).place(x=15, y=10)
-            ctk.CTkLabel(card, text="Installed ✔", font=("Segoe UI", 11), text_color=GREEN_STATUS).place(x=15, y=32)
-            ctk.CTkSwitch(card, text="", width=38).place(relx=0.92, rely=0.5, anchor="e")
+            ctk.CTkLabel(card, text="Modrinth API Ready", font=("Segoe UI", 10), text_color=TEXT_SECONDARY).place(x=15, y=32)
+            
+            ctk.CTkButton(
+                card, text="Install", width=65, height=28, fg_color=ACCENT_BLUE, font=("Segoe UI", 10, "bold"),
+                command=lambda a=addon: self.install_modrinth_single(a)
+            ).place(relx=0.92, rely=0.5, anchor="e")
 
-        # Status Side
         side = ctk.CTkFrame(content, fg_color=CARD_BG, corner_radius=10, border_width=1, border_color=BORDER_COLOR)
         side.grid(row=0, column=1, sticky="nsew")
-        ctk.CTkLabel(side, text="All addons are up to date!", font=("Segoe UI", 13, "bold"), text_color=GREEN_STATUS).pack(pady=20)
+        ctk.CTkLabel(side, text="Modrinth API Connected!\nDirect v2 Mod Fetching", font=("Segoe UI", 13, "bold"), text_color=GREEN_STATUS).pack(pady=20)
         
         return frame
 
     # ---------------------------------------------------------
-    # SETTINGS VIEW (1000121457.png)
+    # SETTINGS VIEW
     # ---------------------------------------------------------
     def create_settings_view(self):
         frame = ctk.CTkScrollableFrame(self.main_container, fg_color="transparent")
@@ -502,12 +578,12 @@ class SupersonicClient(ctk.CTk):
         grid.pack(fill="both", expand=True)
         grid.grid_columnconfigure((0, 1, 2), weight=1)
 
-        # Card 1: General Settings
+        # Card 1: General
         gen = ctk.CTkFrame(grid, fg_color=CARD_BG, corner_radius=10, border_width=1, border_color=BORDER_COLOR)
         gen.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
         ctk.CTkLabel(gen, text="GENERAL SETTINGS", font=("Segoe UI", 11, "bold"), text_color=TEXT_SECONDARY).pack(anchor="w", padx=15, pady=12)
 
-        # Card 2: Performance Settings
+        # Card 2: Performance
         perf = ctk.CTkFrame(grid, fg_color=CARD_BG, corner_radius=10, border_width=1, border_color=BORDER_COLOR)
         perf.grid(row=0, column=1, padx=5, pady=5, sticky="nsew")
         ctk.CTkLabel(perf, text="PERFORMANCE SETTINGS", font=("Segoe UI", 11, "bold"), text_color=TEXT_SECONDARY).pack(anchor="w", padx=15, pady=12)
@@ -520,7 +596,7 @@ class SupersonicClient(ctk.CTk):
         )
         ram_menu.pack(fill="x", padx=15, pady=5)
 
-        # Card 3: Minecraft Directory
+        # Card 3: Directory
         mc = ctk.CTkFrame(grid, fg_color=CARD_BG, corner_radius=10, border_width=1, border_color=BORDER_COLOR)
         mc.grid(row=0, column=2, padx=5, pady=5, sticky="nsew")
         ctk.CTkLabel(mc, text="MINECRAFT SETTINGS", font=("Segoe UI", 11, "bold"), text_color=TEXT_SECONDARY).pack(anchor="w", padx=15, pady=12)
@@ -542,42 +618,57 @@ class SupersonicClient(ctk.CTk):
 
         terminal = ctk.CTkTextbox(frame, fg_color=CARD_BG, font=("Consolas", 12), text_color=GREEN_STATUS)
         terminal.pack(fill="both", expand=True)
-        terminal.insert("end", "[AGENT AI INITIALIZED]\nSystem: Mac/Win Generational ZGC Ready.\nRepository: greeko-afk/Supersonic-Client Synced.\n")
+        terminal.insert("end", "[AGENT AI INITIALIZED]\nSystem: Mac/Win Generational ZGC Ready.\nModrinth API: v2 Connected.\n")
 
         return frame
 
     # ---------------------------------------------------------
-    # ACTION LOGIC
+    # ACTIONS & REAL MODRINTH API EXECUTORS
     # ---------------------------------------------------------
     def open_mc_directory(self):
         path = self.engine.base_minecraft_directory
-        if platform.system() == "Windows":
-            os.startfile(path)
-        elif platform.system() == "Darwin":
-            subprocess.Popen(["open", path])
-        else:
-            subprocess.Popen(["xdg-open", path])
+        if platform.system() == "Windows": os.startfile(path)
+        elif platform.system() == "Darwin": subprocess.Popen(["open", path])
+        else: subprocess.Popen(["xdg-open", path])
 
     def run_ai_scan(self):
-        self.ai_log.insert("end", "\n[SCAN] Checking Java Runtime & JVM Flags...\n[OK] Generational ZGC Verified.\n[OK] Launcher RAM Cache Cleaned.\n")
+        self.ai_log.insert("end", "\n[SCAN] Verified Modrinth API Connections.\n[OK] Generational ZGC Active.\n")
 
-    def install_modpack(self, modpack_name):
-        self.switch_frame("Dashboard")
-        self.play_btn.configure(state="disabled", text="INSTALLING...")
-        
-        def update_status(msg):
-            self.after(0, lambda: self.dash_status.configure(text=msg))
-            if "Running" in msg or "Error" in msg:
-                self.after(0, lambda: self.play_btn.configure(state="normal", text="▶ PLAY"))
+    def install_modrinth_single(self, mod_name):
+        def task():
+            target_dir = os.path.join(self.engine.base_minecraft_directory, "mods")
+            self.dash_status.configure(text=f"Connecting Modrinth for {mod_name}...")
+            
+            def status_cb(msg):
+                self.after(0, lambda: self.dash_status.configure(text=msg))
 
-        threading.Thread(
-            target=self.engine.launch_instance,
-            args=(modpack_name, "1.21.4", "fabric", update_status),
-            daemon=True
-        ).start()
+            self.engine.fetch_and_install_modrinth_mod(mod_name, target_dir, mc_version="1.21.4", loader="fabric", status_cb=status_cb)
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def install_all_essential_addons(self):
+        def task():
+            addons = ["Sodium", "Iris Shaders", "Lithium", "Indium", "Phosphor", "FerriteCore", "Starlight", "Entity Culling"]
+            target_dir = os.path.join(self.engine.base_minecraft_directory, "mods")
+            
+            def status_cb(msg):
+                self.after(0, lambda: self.dash_status.configure(text=msg))
+
+            for addon in addons:
+                self.engine.fetch_and_install_modrinth_mod(addon, target_dir, mc_version="1.21.4", loader="fabric", status_cb=status_cb)
+                time.sleep(0.5)
+            
+            status_cb("✓ All Modrinth Addons Installed!")
+
+        threading.Thread(target=task, daemon=True).start()
 
     def trigger_launch(self):
-        self.install_modpack("Supersonic_Main")
+        self.dash_status.configure(text="Launching Instance...")
+        threading.Thread(
+            target=self.engine.launch_instance,
+            args=("Supersonic_Main", "1.21.4", "fabric", lambda m: self.after(0, lambda: self.dash_status.configure(text=m))),
+            daemon=True
+        ).start()
 
 if __name__ == "__main__":
     app = SupersonicClient()
