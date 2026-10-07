@@ -4,12 +4,10 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-deb:
@@ -41,7 +39,7 @@ jobs:
     - name: Construct Debian Package
       run: |
         PACKAGE_NAME="supersonic-client"
-        
+
         mkdir -p ${PACKAGE_NAME}/DEBIAN
         mkdir -p ${PACKAGE_NAME}/usr/bin
         mkdir -p ${PACKAGE_NAME}/usr/share/supersonic-client
@@ -87,8 +85,10 @@ jobs:
 
     - name: Publish to GitHub Releases
       uses: softprops/action-gh-release@v2
-      if: startsWith(github.ref, 'refs/tags/')
       with:
+        tag_name: latest
+        name: "Supersonic Client Latest Build"
         files: supersonic-client-linux.deb
+        make_latest: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
