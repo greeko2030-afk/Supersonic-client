@@ -1,0 +1,52 @@
+name: Build Linux .tar.gz Archive
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-tar:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Python Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install customtkinter minecraft-launcher-lib requests pillow pyinstaller
+
+    - name: Build Executable with PyInstaller
+      run: |
+        pyinstaller --noconfirm --onedir --windowed --name "supersonic-client" main.py
+
+    - name: Create tar.gz Archive
+      run: |
+        tar -czvf supersonic-client-linux.tar.gz -C dist/supersonic-client .
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: supersonic-client-tar
+        path: supersonic-client-linux.tar.gz
+
+    - name: Publish to GitHub Releases
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: supersonic-client-linux.tar.gz
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
