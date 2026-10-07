@@ -1,0 +1,86 @@
+name: Build Linux .rpm Package
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-rpm:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Build Tools and FPM
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ruby ruby-dev rubygems build-essential
+        sudo gem install --no-document fpm
+
+    - name: Install Python Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install customtkinter minecraft-launcher-lib requests pillow pyinstaller
+
+    - name: Build Executable with PyInstaller
+      run: |
+        pyinstaller --noconfirm --onedir --windowed --name "supersonic-client" main.py
+
+    - name: Prepare Files for RPM
+      run: |
+        mkdir -p rpm_build/usr/share/supersonic-client
+        mkdir -p rpm_build/usr/bin
+        mkdir -p rpm_build/usr/share/applications
+
+        cp -r dist/supersonic-client/* rpm_build/usr/share/supersonic-client/
+
+        cat << 'EOF' > rpm_build/usr/bin/supersonic-client
+        #!/bin/sh
+        exec /usr/share/supersonic-client/supersonic-client "$@"
+        EOF
+        chmod +x rpm_build/usr/bin/supersonic-client
+
+        cat << 'EOF' > rpm_build/usr/share/applications/supersonic-client.desktop
+        [Desktop Entry]
+        Name=Supersonic Client
+        Comment=Hyper optimized Minecraft Launcher
+        Exec=/usr/bin/supersonic-client
+        Terminal=false
+        Type=Application
+        Categories=Game;
+        EOF
+
+    - name: Build RPM Package using FPM
+      run: |
+        fpm -s dir -t rpm -n "supersonic-client" -v "1.0.0" \
+          -p supersonic-client-linux.rpm \
+          --description "Supersonic Client" \
+          --depends "python3" \
+          -C rpm_build .
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: supersonic-client-rpm
+        path: supersonic-client-linux.rpm
+
+    - name: Publish to GitHub Releases
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: supersonic-client-linux.rpm
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
