@@ -1,0 +1,80 @@
+name: Build Linux .AppImage
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-appimage:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install System Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y fuse libfuse2
+
+    - name: Install Python Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install customtkinter minecraft-launcher-lib requests pillow pyinstaller
+
+    - name: Build Executable with PyInstaller
+      run: |
+        pyinstaller --noconfirm --onedir --windowed --name "supersonic-client" main.py
+
+    - name: Construct AppDir and Build
+      run: |
+        mkdir -p AppDir/usr/bin
+        cp -r dist/supersonic-client/* AppDir/usr/bin/
+
+        cat << 'EOF' > AppDir/AppRun
+        #!/bin/sh
+        HERE="$(dirname "$(readlink -f "${0}")")"
+        exec "${HERE}/usr/bin/supersonic-client" "$@"
+        EOF
+        chmod +x AppDir/AppRun
+
+        cat << 'EOF' > AppDir/supersonic-client.desktop
+        [Desktop Entry]
+        Name=Supersonic Client
+        Exec=AppRun
+        Icon=supersonic-client
+        Type=Application
+        Categories=Game;
+        EOF
+
+        touch AppDir/supersonic-client.png
+
+        wget -O appimagetool "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+        chmod +x appimagetool
+        ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir supersonic-client-linux.AppImage
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: supersonic-client-appimage
+        path: supersonic-client-linux.AppImage
+
+    - name: Publish to GitHub Releases
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: supersonic-client-linux.AppImage
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
