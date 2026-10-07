@@ -1,0 +1,94 @@
+name: Build Linux .deb Package
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install System Build Tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential dpkg-dev
+
+    - name: Install Python Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install customtkinter minecraft-launcher-lib requests pillow pyinstaller
+
+    - name: Build Executable with PyInstaller
+      run: |
+        pyinstaller --noconfirm --onedir --windowed --name "supersonic-client" main.py
+
+    - name: Construct Debian Package
+      run: |
+        PACKAGE_NAME="supersonic-client"
+        
+        mkdir -p ${PACKAGE_NAME}/DEBIAN
+        mkdir -p ${PACKAGE_NAME}/usr/bin
+        mkdir -p ${PACKAGE_NAME}/usr/share/supersonic-client
+        mkdir -p ${PACKAGE_NAME}/usr/share/applications
+
+        cat << 'EOF' > ${PACKAGE_NAME}/DEBIAN/control
+        Package: supersonic-client
+        Version: 1.0.0
+        Section: games
+        Priority: optional
+        Architecture: amd64
+        Maintainer: Supersonic Team
+        Depends: python3, openjdk-21-jre
+        Description: Supersonic Client - Hyper optimized Minecraft Launcher
+        EOF
+
+        cp -r dist/supersonic-client/* ${PACKAGE_NAME}/usr/share/supersonic-client/
+
+        cat << 'EOF' > ${PACKAGE_NAME}/usr/bin/supersonic-client
+        #!/bin/sh
+        exec /usr/share/supersonic-client/supersonic-client "$@"
+        EOF
+        chmod +x ${PACKAGE_NAME}/usr/bin/supersonic-client
+
+        cat << 'EOF' > ${PACKAGE_NAME}/usr/share/applications/supersonic-client.desktop
+        [Desktop Entry]
+        Name=Supersonic Client
+        Comment=Hyper optimized Minecraft Launcher
+        Exec=/usr/bin/supersonic-client
+        Terminal=false
+        Type=Application
+        Categories=Game;
+        EOF
+
+        dpkg-deb --build ${PACKAGE_NAME}
+        mv supersonic-client.deb supersonic-client-linux.deb
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: supersonic-client-deb
+        path: supersonic-client-linux.deb
+
+    - name: Publish to GitHub Releases
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: supersonic-client-linux.deb
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
