@@ -473,6 +473,7 @@ class DashboardPage(Page):
         self.app.cfg.set("selected_instance", name)
         self.refresh_chips()
         self.app.refresh_addon_views()
+        self.app.warm_instance()
 
     def refresh_chips(self):
         inst = self.app.inst
@@ -777,6 +778,7 @@ class AddonsPage(Page):
     def __init__(self, parent, app):
         super().__init__(parent, app)
         self.tab, self.query, self.layout, self.selected = "All Addons", "", "grid", "Sodium"
+        self.remote = None      # online search results (Modrinth + CurseForge) or None for the catalog
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
         main = ctk.CTkFrame(self, fg_color="transparent")
@@ -802,7 +804,8 @@ class AddonsPage(Page):
         t = ctk.CTkFrame(sec, fg_color="transparent")
         t.pack(side="left")
         label(t, "Essential Addons", 14, "bold").pack(anchor="w")
-        label(t, "Core addons for the best experience.", 11, color=MUTED).pack(anchor="w")
+        self.sec_sub = label(t, "Core addons for the best experience.", 11, color=MUTED)
+        self.sec_sub.pack(anchor="w")
         self.seg = ctk.CTkSegmentedButton(sec, values=["Grid", "List"], command=self.on_layout, height=30,
                                           selected_color=BLUE, unselected_color=CARD2)
         self.seg.set("Grid")
@@ -835,9 +838,10 @@ class AddonsPage(Page):
         cats.pack(fill="x")
         row = ctk.CTkFrame(cats, fg_color="transparent")
         row.pack(fill="x", padx=12, pady=10)
-        self.search = ctk.CTkEntry(row, placeholder_text="Search addons...", height=34)
+        self.search = ctk.CTkEntry(row, placeholder_text="Search addons... (Enter = search online)", height=34)
         self.search.pack(fill="x")
-        self.search.bind("<KeyRelease>", lambda e: self.on_query())
+        self.search.bind("<KeyRelease>", self.on_query)
+        self.search.bind("<Return>", lambda e: self.search_online())
         top = ctk.CTkFrame(cats, fg_color="transparent")
         top.pack(fill="x", padx=14)
         label(top, "Categories", 13, "bold").pack(side="left")
@@ -888,14 +892,65 @@ class AddonsPage(Page):
         self.layout = v.lower()
         self.render()
 
-    def on_query(self):
+    def on_query(self, event=None):
+        if event is not None and event.keysym in ("Return", "KP_Enter"):
+            return
         self.query = self.search.get().strip().lower()
+        self.remote = None
+        self.sec_sub.configure(text="Core addons for the best experience.")
         self.render()
 
     def clear(self):
         self.search.delete(0, "end")
-        self.query = ""
+        self.query, self.remote = "", None
+        self.sec_sub.configure(text="Core addons for the best experience.")
         self.render()
+
+    def search_online(self):
+        q = self.search.get().strip()
+        if not q:
+            return
+        inst = self.app.inst
+        self.sec_sub.configure(text=f"Searching Modrinth + CurseForge for '{q}'...")
+
+        def work():
+            items, notes = self.app.store.search_all(q, "mod", inst.mc, inst.loader, 12)
+            self.app.ui(self.show_remote, q, items, notes)
+        self.app.bg(work)
+
+    def show_remote(self, q, items, notes):
+        inst = self.app.inst
+        self.remote = {"items": items, "notes": notes}
+        self.sec_sub.configure(text=f"Online results for '{q}' • {inst.mc} {inst.loader.title()}")
+        self.render()
+
+    def make_remote_card(self, item):
+        installed = self.app.inst.has_addon(item["title"])
+        c = card(self.host, height=112, corner_radius=10)
+        ic = label(c, "🧩", 20, width=46, height=46, fg_color=CARD2, corner_radius=10)
+        ic.place(x=12, y=14)
+        self.app.images.load(item["icon"] or item["thumb"], (46, 46), ic)
+        label(c, item["title"][:20], 13, "bold", anchor="w").place(x=68, y=10)
+        label(c, item["summary"][:56], 11, color=MUTED, anchor="w", justify="left", wraplength=120).place(x=68, y=32)
+        mr = item["source"] == "modrinth"
+        label(c, " MR " if mr else " CF ", 9, "bold", "white", fg_color=GREEN if mr else AMBER,
+              corner_radius=5).place(relx=1, x=-8, y=8, anchor="ne")
+        if installed:
+            label(c, "✓ Installed", 11, "bold", GREEN).place(x=68, y=80)
+        else:
+            button(c, "Install", lambda it=item: self.app.install_item(it), height=24, width=70,
+                   font=F(11, "bold")).place(x=68, y=78)
+        return c
+
+    def render_remote(self, cols):
+        items, notes = self.remote["items"], self.remote["notes"]
+        for i, item in enumerate(items):
+            self.make_remote_card(item).grid(row=i // cols, column=i % cols, sticky="ew", padx=4, pady=4)
+        if not items:
+            label(self.host, "No results found.", 13, color=MUTED).grid(row=0, column=0, columnspan=4, pady=30)
+        if notes:
+            label(self.host, "\n".join(notes), 11, color=AMBER, wraplength=600).grid(
+                row=(len(items) - 1) // cols + 1 if items else 1, column=0, columnspan=4, pady=10)
 
     def visible(self):
         return [a for a in ADDONS if (self.tab == "All Addons" or a[2] == self.tab)
@@ -930,6 +985,8 @@ class AddonsPage(Page):
         cols = 4 if self.layout == "grid" else 1
         for c in range(4):
             self.host.grid_columnconfigure(c, weight=1 if c < cols else 0, uniform="a" if c < cols else "")
+        if self.remote is not None:
+            return self.render_remote(cols)
         for i, a in enumerate(self.visible()):
             self.make_card(a).grid(row=i // cols, column=i % cols, sticky="ew", padx=4, pady=4)
 
@@ -1016,6 +1073,7 @@ class ListPage(Page):
     def __init__(self, parent, app, kind):
         super().__init__(parent, app)
         self.kind = kind
+        self.ptype, self.results = "resourcepack", None
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
         head = ctk.CTkFrame(self, fg_color="transparent")
@@ -1033,13 +1091,22 @@ class ListPage(Page):
             button(head, "Open Folder", lambda: B.open_path(self.folder()), primary=False, width=130,
                    height=38).pack(side="right")
             if kind == "Resource Packs":
-                button(head, "＋  Add Pack", self.add_pack, width=130, height=38).pack(side="right", padx=8)
+                button(head, "＋  Add Pack", self.add_pack, primary=False, width=110, height=38).pack(side="right", padx=8)
+                self.seg = ctk.CTkSegmentedButton(head, values=["Resource Packs", "Shaders"], command=self.on_type,
+                                                  height=34, selected_color=BLUE, unselected_color=CARD2)
+                self.seg.set("Resource Packs")
+                self.seg.pack(side="right")
+                self.search = ctk.CTkEntry(head, placeholder_text="Search Modrinth + CurseForge...", width=230, height=38)
+                self.search.pack(side="right", padx=8)
+                self.search.bind("<Return>", lambda e: self.search_online())
         self.host = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self.host.grid(row=1, column=0, sticky="nsew")
         self.host.grid_columnconfigure(0, weight=1)
 
     def folder(self):
-        return self.app.inst.dir / ("resourcepacks" if self.kind == "Resource Packs" else "saves")
+        if self.kind == "Worlds":
+            return self.app.inst.dir / "saves"
+        return self.app.inst.dir / B.CONTENT_DIRS[self.ptype]
 
     def on_show(self):
         self.render()
@@ -1047,10 +1114,13 @@ class ListPage(Page):
     def refresh_instances(self):
         self.render()
 
-    def row(self, icon, title, sub, buttons, selected=False):
+    def row(self, icon, title, sub, buttons, selected=False, img=None):
         r = card(self.host, height=64, corner_radius=10, border_color=CYAN if selected else BORDER)
         r.pack(fill="x", pady=4)
-        label(r, icon, 22, width=44).pack(side="left", padx=(12, 6), pady=10)
+        ic = label(r, icon, 22, width=44, height=44)
+        ic.pack(side="left", padx=(12, 6), pady=10)
+        if img:
+            self.app.images.load(img, (44, 44), ic)
         t = ctk.CTkFrame(r, fg_color="transparent")
         t.pack(side="left")
         label(t, title, 14, "bold", anchor="w").pack(anchor="w")
@@ -1078,6 +1148,17 @@ class ListPage(Page):
             if not app.cfg.get("servers"):
                 label(self.host, "No servers yet. Press 'Add Server'.", 13, color=MUTED).pack(pady=40)
         else:
+            if self.kind == "Resource Packs" and self.results is not None:
+                label(self.host, "Search results", 13, "bold", CYAN, anchor="w").pack(anchor="w", pady=(0, 2))
+                for item in self.results["items"]:
+                    done = app.inst.has_addon(item["title"])
+                    src = "Modrinth" if item["source"] == "modrinth" else "CurseForge"
+                    self.row("🖼", item["title"][:40], f"{src} • by {item['author']} • ⬇ {B.fmt_num(item['downloads'])}",
+                             [("✓ Added" if done else "Install", lambda it=item: app.install_item(it, self.render), not done)],
+                             img=item["icon"] or item["thumb"])
+                if self.results["notes"]:
+                    label(self.host, "\n".join(self.results["notes"]), 11, color=AMBER, wraplength=700).pack(pady=6)
+                label(self.host, "Installed", 13, "bold", CYAN, anchor="w").pack(anchor="w", pady=(10, 2))
             folder = self.folder()
             entries = sorted(folder.iterdir()) if folder.exists() else []
             for p in entries:
@@ -1086,6 +1167,27 @@ class ListPage(Page):
                 self.row("🖼" if self.kind == "Resource Packs" else "🌍", p.name, f"{size / 1e6:.1f} MB", btns)
             if not entries:
                 label(self.host, "Nothing here yet.", 13, color=MUTED).pack(pady=40)
+
+    def on_type(self, value):
+        self.ptype = "resourcepack" if value == "Resource Packs" else "shader"
+        self.results = None
+        self.render()
+
+    def search_online(self):
+        q = self.search.get().strip()
+        if not q:
+            self.results = None
+            return self.render()
+        inst = self.app.inst
+
+        def work():
+            items, notes = self.app.store.search_all(q, self.ptype, inst.mc, inst.loader, 10)
+            self.app.ui(self.show_results, items, notes)
+        self.app.bg(work)
+
+    def show_results(self, items, notes):
+        self.results = {"items": items, "notes": notes}
+        self.render()
 
     def select(self, inst):
         self.app.cfg.set("selected_instance", inst.name)
@@ -1290,11 +1392,12 @@ class SettingsPage(Page):
 
     def quick(self, action):
         if action == "clean":
-            B.shutil.rmtree(B.CACHE_DIR / "packs", ignore_errors=True)
+            freed = B.clean_cache()
             for log in self.app.inst.dir.glob("logs/*.gz"):
+                freed += log.stat().st_size
                 log.unlink(missing_ok=True)
-            self.app.log("Cleaned cached modpack downloads and old logs")
-            self.app.toast("✓ Junk files cleaned", GREEN)
+            self.app.log(f"Cleaned {freed / 1e6:.0f} MB of cached downloads and old logs")
+            self.app.toast(f"✓ Freed {freed / 1e6:.0f} MB", GREEN)
         elif action == "reset":
             self.reset()
         else:
@@ -1354,6 +1457,7 @@ class App(ctk.CTk):
         self.launcher = B.Launcher(self.cfg)
         self.mr, self.cf = B.Modrinth(), B.CurseForge(self.cfg)
         self.packs = B.PackInstaller(self.cfg, self.mgr, self.cf)
+        self.store = B.Store(self.mr, self.cf)
         self.agent = B.Agent(self.cfg)
         self.images = ImageStore(self)
         self.logs, self.panels, self.icon_urls, self.icon_waiters = [], [], {}, []
@@ -1382,6 +1486,7 @@ class App(ctk.CTk):
         self.toast_lbl = label(self, "", 13, "bold", "white", corner_radius=10, height=40, wraplength=760)
         self.show("Dashboard")
         self.bg(self.load_addon_icons)
+        self.warm_instance()
         self.log("Supersonic Client started")
 
     # -- threading helpers --
@@ -1481,6 +1586,25 @@ class App(ctk.CTk):
         for p in self.pages.values():
             p.refresh_instances()
         self.refresh_addon_views()
+        self.warm_instance()
+
+    def warm_instance(self):
+        """Install game files in the background so the PLAY button is instant (setting: Preload Assets)."""
+        if not self.cfg.get("preload_assets"):
+            return
+        inst, dash = self.inst, self.pages["Dashboard"]
+
+        def work():
+            try:
+                if self.launcher.is_ready(inst) or self.running:
+                    return
+                self.ui(dash.set_status, "Preparing game files in background...", CYAN)
+                self.launcher.prepare(inst)
+                if not self.running:
+                    self.ui(dash.set_status, "Ready to launch (preloaded)", GREEN)
+            except Exception:
+                pass        # offline or failed: PLAY will retry and show the real error
+        self.bg(work)
 
     # -- feedback --
     def toast(self, msg, color=BLUE):
@@ -1547,9 +1671,12 @@ class App(ctk.CTk):
                 hide = not self.cfg.get("keep_launcher_open")
                 if hide:
                     self.ui(self.withdraw)
+                started = time.time()
                 proc.wait()
                 if hide:
                     self.ui(self.deiconify)
+                if proc.returncode and time.time() - started < 25:
+                    self.launcher.invalidate(inst)      # next PLAY re-verifies game files once
                 if proc.returncode:
                     self.log(f"Game exited with code {proc.returncode}")
                     self.ui(self.toast, "Game crashed - open Agent (AI) and press Scan & Fix", AMBER)
@@ -1595,36 +1722,65 @@ class App(ctk.CTk):
         self.bg(work)
 
     def install_addons(self, names):
+        """Install catalog addons in parallel (Modrinth first, CurseForge fallback)."""
         if self.busy_addons:
             return self.toast("Addon install already running...", AMBER)
-        self.busy_addons = True
         inst = self.inst
+        todo = [n for n in names if not inst.has_addon(n)]
+        if not todo:
+            return self.toast("✓ Everything is already installed", GREEN)
+        self.busy_addons = True
+        self.toast(f"Installing {len(todo)} addon(s) in parallel...")
 
         def work():
-            ok, failed = 0, []
-            for n in names:
-                if inst.has_addon(n):
-                    ok += 1
-                    continue
-                self.ui(self.toast, f"Installing {n}...")
-                try:
-                    info = self.mr.install_mod(ADDON_MAP[n][1], inst)
-                except Exception:
-                    info = None
-                if info:
-                    inst.addons[n] = info
-                    self.mgr.save()
-                    ok += 1
+            seen, done, last = B.Seen(), [], [0.0]
+
+            def on_done(name, info, err):
+                if not info:
+                    return
+                inst.addons[name] = info
+                done.append(name)
+                self.ui(self.toast, f"Installed {len(done)}/{len(todo)}: {name}")
+                if time.time() - last[0] > 0.7:         # throttle UI refresh
+                    last[0] = time.time()
                     self.ui(self.refresh_addon_views)
-                else:
-                    failed.append(n)
+            jobs = [(n, lambda n=n: self.store.install_addon(n, ADDON_MAP[n][1], inst, seen)) for n in todo]
+            results = B.run_parallel(jobs, min(12, int(self.cfg.get("max_connections", 16))), on_done)
+            self.mgr.save()
+            failed = [n for n, (info, err) in results.items() if not info]
             self.busy_addons = False
-            msg = f"✓ {ok}/{len(names)} addons ready"
+            msg = f"✓ {len(names) - len(failed)}/{len(names)} addons ready"
             if failed:
                 msg += f" • not available for {inst.mc} {inst.loader.title()}: {', '.join(failed)}"
             self.log(msg)
             self.ui(self.toast, msg, GREEN if not failed else AMBER)
             self.ui(self.refresh_addon_views)
+        self.bg(work)
+
+    def install_item(self, item, on_done=None):
+        """Install one online search result (mod / resource pack / shader) from Modrinth or CurseForge."""
+        inst = self.inst
+        self.toast(f"Installing {item['title']}...")
+
+        def work():
+            try:
+                info = self.store.install(item, inst, lambda s: None, B.Seen())
+                if info:
+                    inst.addons[item["title"]] = info
+                    self.mgr.save()
+                    self.log(f"Installed {item['title']} ({item['source']})")
+                    self.ui(self.toast, f"✓ {item['title']} installed", GREEN)
+                else:
+                    self.ui(self.toast, f"No compatible file of {item['title']} for {inst.mc}", AMBER)
+            except B.ManualDownload:
+                self.ui(self.toast, f"{item['title']}: the author blocks third-party downloads - opening its page", AMBER)
+                webbrowser.open(item.get("url", "https://www.curseforge.com/minecraft"))
+            except Exception as e:
+                self.log(f"Install failed: {e}")
+                self.ui(self.toast, f"Install failed: {e}", RED)
+            self.ui(self.refresh_addon_views)
+            if on_done:
+                self.ui(on_done)
         self.bg(work)
 
     def run_action(self, action):
