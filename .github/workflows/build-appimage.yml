@@ -22,15 +22,10 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Install System Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y fuse libfuse2
-
     - name: Install Python Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install customtkinter minecraft-launcher-lib requests pillow pyinstaller
+        pip install customtkinter minecraft-launcher-lib requests pillow psutil pyinstaller
 
     - name: Build Executable with PyInstaller
       run: |
@@ -51,17 +46,30 @@ jobs:
         cat << 'EOF' > AppDir/supersonic-client.desktop
         [Desktop Entry]
         Name=Supersonic Client
-        Exec=AppRun
+        Comment=Hyper optimized Minecraft Launcher
+        Exec=supersonic-client
         Icon=supersonic-client
+        Terminal=false
         Type=Application
         Categories=Game;
         EOF
 
-        touch AppDir/supersonic-client.png
+        # Real icon from the repo (an empty PNG gives a broken icon)
+        cp 1000084689.png AppDir/supersonic-client.png
+        cp 1000084689.png AppDir/.DirIcon
 
-        wget -O appimagetool "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+        # Official appimagetool: it embeds the new type2 runtime, so the resulting
+        # AppImage does not depend on libfuse2 being installed on the user's PC.
+        wget -O appimagetool "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
         chmod +x appimagetool
         ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir supersonic-client-linux.AppImage
+
+    - name: Smoke test AppImage (no FUSE needed)
+      run: |
+        chmod +x supersonic-client-linux.AppImage
+        ./supersonic-client-linux.AppImage --appimage-extract > /dev/null
+        test -x squashfs-root/AppRun
+        test -x squashfs-root/usr/bin/supersonic-client
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
