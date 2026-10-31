@@ -5,6 +5,7 @@ import os
 import platform
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import threading
@@ -40,7 +41,7 @@ FILE_CACHE = CACHE_DIR / "files"           # content-addressed (sha1) download c
 
 MR_API = "https://api.modrinth.com/v2"
 CF_API = "https://api.curseforge.com/v1"
-UA = {"User-Agent": "greeko-afk/Supersonic-Client/2.5.0 (github.com/greeko-afk/Supersonic-Client)"}
+UA = {"User-Agent": "greeko2030-afk/Supersonic-Client/2.6.0 (github.com/greeko2030-afk/Supersonic-Client)"}
 LOADERS = ("fabric", "forge", "neoforge", "quilt")
 CF_LOADER_ID = {"forge": 1, "fabric": 4, "quilt": 5, "neoforge": 6}
 CF_CLASS = {"modpack": 4471, "mod": 6, "resourcepack": 12, "shader": 6552}
@@ -57,8 +58,13 @@ DEFAULTS = {
     "max_connections": 16, "verify_downloads": True, "delete_temp": "Always", "cloud_sync": True,
     "sync_devices": True, "curseforge_key": "", "selected_instance": "Supersonic Main", "servers": [],
     "website_url": "https://supersonic-client--greeko2030.replit.app",
-    "github_url": "https://github.com/greeko-afk/Supersonic-Client",
+    "github_url": "https://github.com/greeko2030-afk/Supersonic-Client",
     "discord_url": "https://discord.com",
+    # Supersonic Mods: mods published in a GitHub repo are installed automatically
+    "auto_custom_mods": True, "mods_repo": "greeko2030-afk/mods", "mods_branch": "",
+    # Translation: OpenGL -> Direct3D 12 (Windows only). Mode: Auto / OpenGL / D3D12
+    "translation_mode": "Auto", "translation_folder": "Hidden Folder (Default)",
+    "engine_repo": "greeko2030-afk/Supersonic-Client",
 }
 
 
@@ -278,6 +284,10 @@ class Config:
                 self.data.update(json.loads(CONFIG_FILE.read_text("utf-8")))
             except Exception:
                 pass
+        # older versions shipped a wrong GitHub account name in the default URL
+        url = str(self.data.get("github_url", ""))
+        if "github.com/greeko-afk/" in url:
+            self.data["github_url"] = url.replace("github.com/greeko-afk/", "github.com/greeko2030-afk/")
 
     def get(self, key, default=None):
         return self.data.get(key, default)
@@ -762,10 +772,847 @@ G1_FLAGS = [
 ]
 
 
+# ----------------------------------------------------------------------------
+# Supersonic Mods: mods published in a GitHub repository are installed automatically
+# ----------------------------------------------------------------------------
+try:
+    import tomllib                      # Python 3.11+
+except ImportError:                     # pragma: no cover
+    try:
+        import tomli as tomllib
+    except ImportError:
+        tomllib = None
+
+GH_API = "https://api.github.com"
+GH_RAW = "https://raw.githubusercontent.com"
+CUSTOM_MODS_DIR = CACHE_DIR / "custom_mods"           # verified jars, named by git blob sha
+CUSTOM_MODS_STATE = APP_DIR / "custom_mods.json"
+MC_TOKEN_RE = re.compile(r"(?:\+|mc[-_]?)(1\.\d{1,2}(?:\.\d{1,2})?)(?!\.?\d)", re.I)
+
+
+def mc_parts(version):
+    """'1.21.4' -> (1, 21, 4). Snapshots / unknown formats -> None."""
+    text = str(version).strip()
+    if re.fullmatch(r"\d+(?:\.\d+){0,3}", text):
+        return tuple(int(x) for x in text.split("."))
+    return None
+
+
+def _cmp(a, b):
+    n = max(len(a), len(b))
+    a, b = tuple(a) + (0,) * (n - len(a)), tuple(b) + (0,) * (n - len(b))
+    return (a > b) - (a < b)
+
+
+def _term_ok(term, ver):
+    """One Fabric-style version comparator: >=1.21 <1.21.1 1.21.x ~1.21.2 ^1.21 * 1.21.4"""
+    term = term.strip().rstrip("-")             # '1.21-' is the pre-release marker; irrelevant for releases
+    if term in ("", "*", "x", "X"):
+        return True
+    m = re.fullmatch(r"(>=|<=|>|<|=|~|\^)?v?(.+)", term)
+    op, rest = (m.group(1) or ""), m.group(2)
+    if re.search(r"(^|\.)[xX*](\.|$)", rest):    # wildcard such as 1.21.x
+        prefix = []
+        for part in rest.split("."):
+            if part in ("x", "X", "*"):
+                break
+            if not part.isdigit():
+                return False
+            prefix.append(int(part))
+        return tuple(ver[:len(prefix)]) == tuple(prefix)
+    want = mc_parts(rest)
+    if want is None:
+        return False
+    c = _cmp(ver, want)
+    if op in ("", "="):
+        return c == 0
+    if op == ">=":
+        return c >= 0
+    if op == "<=":
+        return c <= 0
+    if op == ">":
+        return c > 0
+    if op == "<":
+        return c < 0
+    if op == "~":
+        upper = (want[0], want[1] + 1) if len(want) >= 2 else (want[0] + 1,)
+        return c >= 0 and _cmp(ver, upper) < 0
+    if op == "^":
+        return c >= 0 and _cmp(ver, (want[0] + 1,)) < 0
+    return False
+
+
+def _maven_ok(spec, ver):
+    """Forge / NeoForge version ranges: [1.21,1.22)  [1.20.1,)  (,1.21]  1.21"""
+    ranges = re.findall(r"[\[(][^\[\]()]*[\])]", spec)
+    if not ranges:
+        want = mc_parts(spec.strip())
+        return want is not None and _cmp(ver, want) >= 0      # bare version = minimum
+    for part in ranges:
+        lo_inc, hi_inc, body = part[0] == "[", part[-1] == "]", part[1:-1]
+        if "," not in body:
+            want = mc_parts(body.strip())
+            if want is not None and _cmp(ver, want) == 0:
+                return True
+            continue
+        lo, hi = (x.strip() for x in body.split(",", 1))
+        ok = True
+        if lo:
+            lo_v = mc_parts(lo)
+            ok = lo_v is not None and (_cmp(ver, lo_v) >= 0 if lo_inc else _cmp(ver, lo_v) > 0)
+        if ok and hi:
+            hi_v = mc_parts(hi)
+            ok = hi_v is not None and (_cmp(ver, hi_v) <= 0 if hi_inc else _cmp(ver, hi_v) < 0)
+        if ok:
+            return True
+    return False
+
+
+def mc_matches(pred, mc, style="fabric"):
+    """True when Minecraft version `mc` satisfies the dependency predicate `pred` (str, list or None)."""
+    ver = mc_parts(mc)
+    if ver is None:
+        return False
+    if pred is None:
+        return True                              # the mod does not restrict the Minecraft version
+    if style == "maven":
+        return _maven_ok(str(pred), ver)
+    alternatives = pred if isinstance(pred, (list, tuple)) else [pred]
+    for alt in alternatives:
+        for branch in str(alt).split("||"):
+            branch = re.sub(r"(>=|<=|>|<|=|~|\^)\s+", r"\1", branch.strip())
+            if branch and all(_term_ok(t, ver) for t in branch.split()):
+                return True
+    return False
+
+
+def git_blob_sha(path):
+    """The sha1 GitHub reports for a file in the git tree (differs from the plain file sha1)."""
+    size = Path(path).stat().st_size
+    h = hashlib.sha1(f"blob {size}\0".encode())
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _natural_key(text):
+    return [int(p) if p.isdigit() else p for p in re.split(r"(\d+)", text.lower())]
+
+
+def _mc_dependency(deps):
+    """Extract the `minecraft` predicate from a fabric / quilt dependency block (None = unrestricted)."""
+    if isinstance(deps, dict):
+        return deps.get("minecraft")
+    if isinstance(deps, list):                   # quilt: [{"id": "minecraft", "versions": ...}, "other"]
+        for dep in deps:
+            if isinstance(dep, dict) and dep.get("id") == "minecraft":
+                v = dep.get("versions")
+                return v if isinstance(v, (str, list)) else None
+    return None
+
+
+def read_jar_meta(path):
+    """Reads mod metadata from a jar. Returns {id, version, env, loaders:[..], mc:{loader: predicate}} or None."""
+    meta = {"id": "", "version": "", "env": "*", "loaders": [], "mc": {}}
+    try:
+        with zipfile.ZipFile(path) as z:
+            def read(name):
+                try:
+                    return z.read(name)
+                except KeyError:
+                    return None
+
+            raw = read("fabric.mod.json")
+            if raw:
+                data = json.loads(raw.decode("utf-8-sig"), strict=False)
+                meta.update(id=str(data.get("id", "")), version=str(data.get("version", "")),
+                            env=str(data.get("environment", "*")))
+                meta["loaders"].append("fabric")
+                meta["mc"]["fabric"] = _mc_dependency(data.get("depends", {}))
+            raw = read("quilt.mod.json")
+            if raw:
+                data = json.loads(raw.decode("utf-8-sig"), strict=False).get("quilt_loader", {})
+                meta["id"] = meta["id"] or str(data.get("id", ""))
+                meta["version"] = meta["version"] or str(data.get("version", ""))
+                meta["loaders"].append("quilt")
+                meta["mc"]["quilt"] = _mc_dependency(data.get("depends", []))
+            for loader, name in (("neoforge", "META-INF/neoforge.mods.toml"), ("forge", "META-INF/mods.toml")):
+                raw = read(name)
+                if raw and tomllib:
+                    data = tomllib.loads(raw.decode("utf-8-sig"))
+                    mods = data.get("mods") or [{}]
+                    mid = str(mods[0].get("modId", ""))
+                    meta["id"] = meta["id"] or mid
+                    meta["version"] = meta["version"] or str(mods[0].get("version", ""))
+                    meta["loaders"].append(loader)
+                    pred = None
+                    for dep in (data.get("dependencies", {}) or {}).get(mid, []):
+                        if dep.get("modId") == "minecraft":
+                            pred = dep.get("versionRange")
+                    meta["mc"][loader] = pred
+    except Exception:
+        return None
+    return meta if meta["loaders"] else None
+
+
+def classify_repo_path(path):
+    """Cheap classification from the path only (no download): Minecraft versions + loaders it names."""
+    parts = path.split("/")
+    name = parts[-1]
+    mcs = {p for p in parts[:-1] if (mc_parts(p) or ()) and len(mc_parts(p)) >= 2}
+    if not mcs:
+        mcs = set(MC_TOKEN_RE.findall(name))
+    loaders = {p.lower() for p in parts[:-1] if p.lower() in LOADERS}
+    m = re.match(r"^(.*?)[-_+ ]v?\d", name[:-4])
+    slug = re.sub(r"[_ ]", "-", (m.group(1) if m else name[:-4]).lower())
+    return {"name": name, "slug": slug, "mcs": sorted(mcs), "loaders": sorted(loaders)}
+
+
+class CustomMods:
+    """Keeps the mods of a GitHub repo (default: greeko2030-afk/mods) installed in every matching instance.
+
+    - one cheap API call per start (ETag => HTTP 304 costs no rate limit)
+    - every jar is verified against the git blob sha before it is used
+    - only files this class installed are ever updated or removed; mods the user added are never touched
+    - if the user already has the same mod id installed, the user's copy wins (no duplicate-mod crash)
+    """
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.lock = threading.RLock()
+        self._meta_lock = threading.Lock()
+        self._local_cache = {}
+
+    # -- persistent state ---------------------------------------------------------------
+    def _load(self):
+        try:
+            return json.loads(CUSTOM_MODS_STATE.read_text("utf-8"))
+        except Exception:
+            return {}
+
+    def _save(self, state):
+        CUSTOM_MODS_STATE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = CUSTOM_MODS_STATE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state), "utf-8")
+        os.replace(tmp, CUSTOM_MODS_STATE)
+
+    @property
+    def repo(self):
+        return str(self.cfg.get("mods_repo") or "greeko2030-afk/mods").strip().strip("/")
+
+    @property
+    def ref(self):
+        return str(self.cfg.get("mods_branch") or "").strip() or "HEAD"
+
+    def info(self):
+        st = self._load()
+        return {"checked": st.get("checked", 0), "files": len(st.get("tree", [])),
+                "installed": sum(len(v) for v in st.get("managed", {}).values())}
+
+    # -- GitHub tree --------------------------------------------------------------------
+    @staticmethod
+    def _entry(item):
+        path = item["path"]
+        entry = classify_repo_path(path)
+        entry.update(path=path, sha=item["sha"], size=int(item.get("size", 0)))
+        return entry
+
+    def _load_tree(self, state, network, report):
+        key = f"{self.repo}@{self.ref}"
+        if state.get("key") != key:                  # repo / branch changed in settings
+            state.clear()
+            state["key"] = key
+        if network:
+            headers = {"Accept": "application/vnd.github+json"}
+            if state.get("etag") and state.get("tree") is not None:
+                headers["If-None-Match"] = state["etag"]
+            try:
+                r = http_get(f"{GH_API}/repos/{self.repo}/git/trees/{self.ref}?recursive=1", headers=headers)
+                if r.status_code == 304:
+                    state["checked"] = time.time()
+                elif r.status_code == 200:
+                    data = r.json()
+                    if data.get("truncated"):
+                        report["errors"].append("Repository listing was truncated by GitHub (too many files)")
+                    state["tree"] = [{"path": i["path"], "sha": i["sha"], "size": i.get("size", 0)}
+                                     for i in data.get("tree", [])
+                                     if i.get("type") == "blob" and i["path"].lower().endswith(".jar")
+                                     and not i["path"].startswith(".github/")
+                                     and not re.search(r"-(sources|dev|javadoc)\.jar$", i["path"], re.I)]
+                    state["etag"] = r.headers.get("ETag", "")
+                    state["checked"] = time.time()
+                elif r.status_code == 403 and r.headers.get("X-RateLimit-Remaining") == "0":
+                    report["errors"].append("GitHub rate limit reached - using the saved list")
+                else:
+                    report["errors"].append(f"GitHub answered HTTP {r.status_code} - using the saved list")
+            except (requests.RequestException, ValueError) as e:
+                report["offline"] = True
+                report["errors"].append(f"Could not reach GitHub ({type(e).__name__}) - using the saved list")
+        if state.get("tree") is None:
+            return None
+        return [self._entry(i) for i in state["tree"]]
+
+    # -- jar download / metadata ----------------------------------------------------------
+    def _fetch(self, entry):
+        """Returns the local path of the verified jar, downloading it first when needed."""
+        dest = CUSTOM_MODS_DIR / f"{entry['sha']}.jar"
+        if dest.exists() and dest.stat().st_size == entry["size"]:
+            return dest
+        CUSTOM_MODS_DIR.mkdir(parents=True, exist_ok=True)
+        quoted = requests.utils.quote(entry["path"])
+        sources = [(f"{GH_RAW}/{self.repo}/{self.ref}/{quoted}", {}),
+                   (f"{GH_API}/repos/{self.repo}/git/blobs/{entry['sha']}",
+                    {"Accept": "application/vnd.github.raw+json"})]      # fallback if the branch moved meanwhile
+        last = None
+        for url, headers in sources:
+            tmp = dest.with_name(f"{dest.name}.{uuid.uuid4().hex[:8]}.part")
+            try:
+                digest = hashlib.sha1(f"blob {entry['size']}\0".encode())
+                with http_get(url, headers=headers, stream=True, timeout=30) as r:
+                    r.raise_for_status()
+                    with open(tmp, "wb") as f:
+                        for chunk in r.iter_content(1 << 18):
+                            f.write(chunk)
+                            digest.update(chunk)
+                if digest.hexdigest() != entry["sha"]:
+                    last = IOError(f"Checksum mismatch for {entry['name']}")
+                    continue
+                os.replace(tmp, dest)
+                return dest
+            except requests.RequestException as e:
+                last = e
+            finally:
+                tmp.unlink(missing_ok=True)
+        raise last or IOError(f"Could not download {entry['name']}")
+
+    def _meta(self, state, entry):
+        with self._meta_lock:
+            cache = state.setdefault("meta", {})
+            if entry["sha"] in cache:
+                return cache[entry["sha"]] or None
+            try:
+                path = self._fetch(entry)
+            except Exception:                    # noqa: BLE001 - no network: try again next time
+                return None
+            cache[entry["sha"]] = read_jar_meta(path) or {}      # {} = not a loadable mod, never retry
+            return cache[entry["sha"]] or None
+
+    # -- choosing the right file for an instance ------------------------------------------
+    @staticmethod
+    def _loader_ok(loader, meta):
+        have = set(meta["loaders"])
+        return loader in have or (loader == "quilt" and "fabric" in have)
+
+    @staticmethod
+    def _mc_ok(loader, meta, mc):
+        pred = meta["mc"].get(loader, meta["mc"].get("fabric") if loader == "quilt" else None)
+        return mc_matches(pred, mc, "maven" if loader in ("forge", "neoforge") else "fabric")
+
+    def _pick(self, state, inst, items):
+        mc = inst.mc
+        series = tuple(mc_parts(mc)[:2])
+        exact = [e for e in items if mc in e["mcs"]]
+        plain = [e for e in items if not e["mcs"]]
+        near = [e for e in items if e["mcs"] and mc not in e["mcs"]
+                and any(tuple((mc_parts(t) or ())[:2]) == series for t in e["mcs"])]
+        for pool, trust_name in ((exact, True), (plain, False), (near, False)):
+            for e in sorted(pool, key=lambda x: _natural_key(x["name"]), reverse=True):
+                if e["loaders"] and not (inst.loader in e["loaders"]
+                                         or (inst.loader == "quilt" and "fabric" in e["loaders"])):
+                    continue
+                meta = self._meta(state, e)
+                if not meta or not self._loader_ok(inst.loader, meta) or meta.get("env") == "server":
+                    continue
+                if trust_name or self._mc_ok(inst.loader, meta, mc):
+                    return e, meta
+        return None, None
+
+    def _local_ids(self, inst, skip_names):
+        """mod id -> filename for the jars the user put into the instance themselves."""
+        found = {}
+        if not inst.mods_dir.exists():
+            return found
+        for p in inst.mods_dir.glob("*.jar"):
+            if p.name in skip_names:
+                continue
+            try:
+                st = p.stat()
+                key = (str(p), st.st_size, st.st_mtime_ns)
+                if key not in self._local_cache:
+                    self._local_cache[key] = (read_jar_meta(p) or {}).get("id", "")
+                if self._local_cache[key]:
+                    found[self._local_cache[key]] = p.name
+            except OSError:
+                continue
+        return found
+
+    # -- applying -------------------------------------------------------------------------
+    def _apply(self, state, inst, tree, report):
+        managed = state.setdefault("managed", {}).setdefault(inst.dir.name, {})
+        if mc_parts(inst.mc) is None:
+            return
+        groups = {}
+        for e in tree:
+            groups.setdefault(e["slug"], []).append(e)
+        local = self._local_ids(inst, set(managed))
+        desired = {}
+        for items in groups.values():
+            entry, meta = self._pick(state, inst, items)
+            if not entry:
+                continue
+            if meta["id"] in local:
+                report["skipped"].append(f"{entry['name']} ({inst.name}: you already have {local[meta['id']]})")
+                continue
+            desired[entry["name"]] = entry
+        # remove files this launcher installed earlier but that are no longer wanted (updated / removed upstream)
+        for fname in [f for f in managed if f not in desired]:
+            (inst.mods_dir / fname).unlink(missing_ok=True)
+            managed.pop(fname, None)
+            report["removed"].append(f"{fname} ({inst.name})")
+        for fname, entry in desired.items():
+            dest = inst.mods_dir / fname
+            if managed.get(fname) == entry["sha"] and dest.exists():
+                continue
+            if dest.exists() and fname not in managed and git_blob_sha(dest) != entry["sha"]:
+                report["skipped"].append(f"{fname} ({inst.name}: a different file with this name exists)")
+                continue
+            try:
+                src = self._fetch(entry)
+                inst.mods_dir.mkdir(parents=True, exist_ok=True)
+                tmp = dest.with_name(f"{fname}.{uuid.uuid4().hex[:8]}.part")
+                try:
+                    _link_or_copy(src, tmp)
+                    os.replace(tmp, dest)
+                finally:
+                    tmp.unlink(missing_ok=True)
+                report["updated" if fname in managed else "installed"].append(f"{fname} ({inst.name})")
+                managed[fname] = entry["sha"]
+            except Exception as e:               # noqa: BLE001 - one bad file must not stop the rest
+                report["errors"].append(f"{fname}: {e}")
+
+    def sync(self, instances, network=True, progress=None, prune=False):
+        """Checks the repo and installs / updates / removes mods in the given instances. Returns a report dict."""
+        report = {"installed": [], "updated": [], "removed": [], "skipped": [], "errors": [],
+                  "new_in_repo": [], "offline": False}
+        with self.lock:
+            state = self._load()
+            old_paths = {t["path"] + "@" + t["sha"] for t in state.get("tree", [])}
+            had_tree = bool(state.get("tree"))
+            if progress:
+                progress("Checking Supersonic mods repository...")
+            tree = self._load_tree(state, network, report)
+            if tree is None:
+                report["errors"].append("No mod list available yet")
+                return report
+            if had_tree:
+                report["new_in_repo"] = [t["name"] for t in tree if t["path"] + "@" + t["sha"] not in old_paths]
+            for inst in instances:
+                try:
+                    if progress:
+                        progress(f"Installing Supersonic mods into {inst.name}...")
+                    self._apply(state, inst, tree, report)
+                except Exception as e:           # noqa: BLE001
+                    report["errors"].append(f"{inst.name}: {e}")
+            # forget bookkeeping of instances that no longer exist
+            names = {i.dir.name for i in instances}
+            if prune:
+                state["managed"] = {k: v for k, v in state.get("managed", {}).items() if k in names}
+            self._save(state)
+        return report
+
+    def ensure(self, inst, progress=None):
+        """Before launching: make sure this one instance has its mods. Uses the saved list when it is fresh."""
+        state = self._load()
+        fresh = time.time() - state.get("checked", 0) < 6 * 3600 and state.get("tree") is not None
+        return self.sync([inst], network=not fresh, progress=progress)
+
+    @staticmethod
+    def summary(report):
+        parts = []
+        for key, word in (("installed", "installed"), ("updated", "updated"), ("removed", "removed")):
+            if report.get(key):
+                parts.append(f"{len(report[key])} {word}")
+        return ", ".join(parts)
+
+
+
+# ----------------------------------------------------------------------------
+# OpenGL -> Direct3D 12 translation (Windows only, Mesa GLon12)
+# ----------------------------------------------------------------------------
+GH_MEDIA = "https://media.githubusercontent.com/media"
+TRANSLATION_STATE = APP_DIR / "translation.json"
+ENGINE_REQUIRED = ("opengl32.dll", "libgallium_wgl.dll")        # without these Mesa cannot start
+ENGINE_FILES = ENGINE_REQUIRED + ("dxil.dll", "libglapi.dll", "libEGL.dll", "libGLESv1_CM.dll", "libGLESv2.dll")
+TRANSLATION_MODES = ("Auto", "OpenGL", "D3D12")
+TRANSLATION_FOLDERS = ("Hidden Folder (Default)", "Visible Folder")
+FILE_ATTRIBUTE_HIDDEN = 0x2
+FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+
+
+def _is_link(path):
+    """True for symlinks AND Windows junctions (which Path.is_symlink() cannot see before Python 3.12)."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    return stat.S_ISLNK(st.st_mode) or bool(getattr(st, "st_file_attributes", 0) & FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def rmtree_safe(path):
+    """Delete a tree WITHOUT ever following links / junctions (shutil.rmtree could delete the real JRE)."""
+    path = Path(path)
+    if not os.path.lexists(path):
+        return
+    if _is_link(path):
+        try:
+            os.unlink(path)
+        except OSError:
+            os.rmdir(path)                      # Windows junction
+        return
+    if path.is_dir():
+        for child in list(path.iterdir()):
+            rmtree_safe(child)
+        os.rmdir(path)
+    else:
+        try:
+            path.unlink()
+        except PermissionError:
+            os.chmod(path, 0o666)
+            path.unlink()
+
+
+def _dir_link(link, target):
+    """Directory link without admin rights: NTFS junction on Windows, symlink elsewhere (copy as last resort)."""
+    link, target = Path(link), Path(target)
+    try:
+        if platform.system() == "Windows":
+            r = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)],
+                               capture_output=True, creationflags=NO_WINDOW, timeout=20)
+            if r.returncode == 0:
+                return
+        else:
+            os.symlink(target, link, target_is_directory=True)
+            return
+    except (OSError, subprocess.SubprocessError):
+        pass
+    shutil.copytree(target, link, symlinks=False)
+
+
+def _pe_machine(path):
+    """CPU architecture of a Windows DLL / EXE ('x64', 'arm64', 'x86') or None."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(4096)
+        off = int.from_bytes(head[0x3C:0x40], "little")
+        if head[off:off + 4] != b"PE\0\0":
+            return None
+        return {0x8664: "x64", 0xAA64: "arm64", 0x14C: "x86"}.get(int.from_bytes(head[off + 4:off + 6], "little"))
+    except OSError:
+        return None
+
+
+def _host_arch():
+    return {"amd64": "x64", "x86_64": "x64", "arm64": "arm64", "aarch64": "arm64"}.get(platform.machine().lower(), "x86")
+
+
+def d3d12_capable():
+    """True when this Windows PC can create a Direct3D 12 device (feature level 11_0). Safe to call anywhere."""
+    if platform.system() != "Windows":
+        return False
+    try:
+        import ctypes
+
+        class GUID(ctypes.Structure):
+            _fields_ = [("a", ctypes.c_uint32), ("b", ctypes.c_uint16), ("c", ctypes.c_uint16), ("d", ctypes.c_ubyte * 8)]
+
+        iid = GUID(0x189819F1, 0x1DB6, 0x4B57, (ctypes.c_ubyte * 8)(0xBE, 0x54, 0x18, 0x21, 0x33, 0x9B, 0x85, 0xF7))
+        fn = ctypes.windll.d3d12.D3D12CreateDevice
+        fn.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.POINTER(GUID), ctypes.c_void_p]
+        fn.restype = ctypes.c_long
+        return fn(None, 0xB000, ctypes.byref(iid), None) == 0       # NULL out-pointer = capability check only
+    except Exception:
+        return False
+
+
+class Translation:
+    """Runs Minecraft through Mesa's OpenGL-on-D3D12 layer.
+
+    Windows loads opengl32.dll from the folder of the .exe before System32, so the translation layer is put next
+    to a private copy of the JVM launcher (a "shadow JRE" made of links - almost no disk space). Everything the
+    translation needs and produces (engine DLLs, shadow JRE, translated shader cache) lives in ONE folder that
+    is hidden by default; the real Java installation is never modified.
+    """
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.last_note = ""                 # human readable reason of the last decision
+        self._d3d12 = None
+
+    # -- settings / paths ---------------------------------------------------------------
+    @staticmethod
+    def supported():
+        return platform.system() == "Windows"
+
+    def mode(self):
+        value = str(self.cfg.get("translation_mode", "Auto"))
+        return value if value in TRANSLATION_MODES else "Auto"
+
+    @property
+    def hidden(self):
+        return not str(self.cfg.get("translation_folder", "")).startswith("Visible")
+
+    @property
+    def root(self):
+        return APP_DIR / (".translation" if self.hidden else "translation")
+
+    @property
+    def cache_dir(self):
+        return self.root / "cache"
+
+    def _prepare_root(self):
+        self.root.mkdir(parents=True, exist_ok=True)
+        if platform.system() == "Windows":
+            try:
+                import ctypes
+                attrs = ctypes.windll.kernel32.GetFileAttributesW(str(self.root))
+                if attrs != -1:
+                    new = (attrs | FILE_ATTRIBUTE_HIDDEN) if self.hidden else (attrs & ~FILE_ATTRIBUTE_HIDDEN)
+                    ctypes.windll.kernel32.SetFileAttributesW(str(self.root), new)
+            except Exception:
+                pass
+
+    def _state(self):
+        try:
+            return json.loads(TRANSLATION_STATE.read_text("utf-8"))
+        except Exception:
+            return {}
+
+    def _save_state(self, data):
+        try:
+            TRANSLATION_STATE.write_text(json.dumps(data), "utf-8")
+        except OSError:
+            pass
+
+    def reset_state(self):
+        """Forget an automatic OpenGL fallback (called when the user changes the mode or asks to retry)."""
+        self._save_state({})
+
+    def d3d12_available(self):
+        if self._d3d12 is None:
+            self._d3d12 = d3d12_capable()
+        return self._d3d12
+
+    # -- engine files ------------------------------------------------------------------
+    def _engine_sources(self):
+        dirs = [APP_DIR / "engine"]
+        if getattr(sys, "frozen", False):
+            dirs.append(Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)) / "engine")
+            dirs.append(Path(sys.executable).parent / "engine")
+        dirs += [Path(__file__).resolve().parent / "engine", Path.cwd() / "engine"]
+        return [d for d in dirs if d.is_dir()]
+
+    def engine_dir(self):
+        return self.root / "engine"
+
+    def engine_missing(self):
+        return [n for n in ENGINE_REQUIRED if not (self.engine_dir() / n).is_file()]
+
+    def engine_signature(self):
+        parts = []
+        for n in ENGINE_FILES:
+            p = self.engine_dir() / n
+            if p.is_file():
+                st = p.stat()
+                parts.append(f"{n}:{st.st_size}:{st.st_mtime_ns}")
+        return hashlib.sha1("|".join(parts).encode()).hexdigest()[:12]
+
+    def _download_engine_file(self, repo, ref, item, dest):
+        """Download one engine file from GitHub, verified (git blob sha, or sha256 when stored with Git LFS)."""
+        quoted = requests.utils.quote(item["path"])
+        tmp = dest.with_name(f"{dest.name}.{uuid.uuid4().hex[:8]}.part")
+        try:
+            if int(item.get("size", 0)) < 400:                    # tiny file: maybe a Git LFS pointer
+                r = http_get(f"{GH_API}/repos/{repo}/git/blobs/{item['sha']}",
+                             headers={"Accept": "application/vnd.github.raw+json"})
+                r.raise_for_status()
+                if r.content.startswith(b"version https://git-lfs"):
+                    oid = re.search(rb"oid sha256:([0-9a-f]{64})", r.content).group(1).decode()
+                    url, digest, expected = f"{GH_MEDIA}/{repo}/{ref}/{quoted}", hashlib.sha256(), oid
+                else:
+                    tmp.write_bytes(r.content)
+                    url = None
+            else:
+                url = f"{GH_RAW}/{repo}/{ref}/{quoted}"
+                digest = hashlib.sha1(f"blob {item['size']}\0".encode())
+                expected = item["sha"]
+            if url:
+                with http_get(url, stream=True, timeout=60) as r:
+                    r.raise_for_status()
+                    with open(tmp, "wb") as f:
+                        for chunk in r.iter_content(1 << 18):
+                            f.write(chunk)
+                            digest.update(chunk)
+                if digest.hexdigest() != expected:
+                    raise IOError(f"Checksum mismatch for {dest.name}")
+            os.replace(tmp, dest)
+        finally:
+            tmp.unlink(missing_ok=True)
+
+    def ensure_engine(self, status=None):
+        """Collects the engine DLLs into the translation folder (bundled copy first, then GitHub). Returns missing list."""
+        eng = self.engine_dir()
+        eng.mkdir(parents=True, exist_ok=True)
+        for src_dir in self._engine_sources():
+            for name in ENGINE_FILES:
+                src, dst = src_dir / name, eng / name
+                if src.is_file() and src.stat().st_size > 0 and not (dst.is_file() and dst.stat().st_size == src.stat().st_size):
+                    shutil.copyfile(src, dst)
+        missing = self.engine_missing()
+        if not missing:
+            return []
+        repo = str(self.cfg.get("engine_repo") or "greeko2030-afk/Supersonic-Client")
+        if status:
+            status("Downloading D3D12 translation engine...")
+        try:
+            r = http_get(f"{GH_API}/repos/{repo}/git/trees/HEAD?recursive=1")
+            r.raise_for_status()
+            wanted = {n.lower() for n in ENGINE_FILES}
+            items = [i for i in r.json().get("tree", [])
+                     if i.get("type") == "blob" and i["path"].lower().startswith("engine/")
+                     and i["path"].count("/") == 1 and i["path"].split("/")[-1].lower() in wanted
+                     and not (eng / i["path"].split("/")[-1]).is_file()]
+            for item in items:
+                self._download_engine_file(repo, "HEAD", item, eng / item["path"].split("/")[-1])
+        except Exception:                        # noqa: BLE001 - reported through the missing list below
+            pass
+        return self.engine_missing()
+
+    # -- shadow JRE --------------------------------------------------------------------
+    def _link_file(self, src, dst):
+        try:
+            os.link(src, dst)
+        except OSError:
+            shutil.copy2(src, dst)
+
+    def _shadow_jre(self, java_exe):
+        java_exe = Path(java_exe).resolve()
+        home = java_exe.parent.parent
+        st = java_exe.stat()
+        key = hashlib.sha1(f"{home}|{st.st_size}|{st.st_mtime_ns}".encode()).hexdigest()[:10]
+        dst = self.root / "jre" / key
+        shadow_exe = dst / "bin" / java_exe.name
+        marker = dst / ".ready"
+        sig = self.engine_signature()
+        if marker.is_file() and shadow_exe.exists() and marker.read_text("utf-8") == sig:
+            return shadow_exe
+        rmtree_safe(dst)
+        (dst / "bin").mkdir(parents=True)
+        for entry in home.iterdir():                          # lib, conf, legal, release ... are shared by link
+            if entry.name == "bin":
+                continue
+            target = dst / entry.name
+            _dir_link(target, entry) if entry.is_dir() else self._link_file(entry, target)
+        for entry in (home / "bin").iterdir():
+            target = dst / "bin" / entry.name
+            _dir_link(target, entry) if entry.is_dir() else self._link_file(entry, target)
+        for name in ENGINE_FILES:                             # the translation layer sits next to java(w).exe
+            src = self.engine_dir() / name
+            if src.is_file():
+                target = dst / "bin" / name
+                if os.path.lexists(target):
+                    target.unlink()
+                self._link_file(src, target)
+        marker.write_text(sig, "utf-8")
+        return shadow_exe
+
+    # -- decision ----------------------------------------------------------------------
+    def describe(self):
+        """Short status for the settings page."""
+        if not self.supported():
+            return "Windows only - not used on this system"
+        if not self.d3d12_available():
+            return "No Direct3D 12 GPU found - OpenGL is used"
+        missing = self.engine_missing()
+        if missing and not any((d / n).is_file() for d in self._engine_sources() for n in missing):
+            return "Direct3D 12 detected - engine files will be downloaded on first use"
+        return "Direct3D 12 detected - ready"
+
+    def plan(self, java_exe, status=None):
+        """Returns {'mode','java','env'} to run Minecraft through D3D12, or None for plain OpenGL (reason in last_note)."""
+        self.last_note = ""
+        mode = self.mode()
+        if not self.supported():
+            self.last_note = "Translation is Windows-only"
+            return None
+        if mode == "OpenGL":
+            self.last_note = "OpenGL selected"
+            return None
+        state = self._state()
+        if mode == "Auto" and state.get("auto_off") and state.get("sig") == self.engine_signature():
+            self.last_note = "D3D12 crashed earlier - Auto switched to OpenGL (choose D3D12 to retry)"
+            return None
+        if not self.d3d12_available():
+            self.last_note = "No Direct3D 12 capable GPU found - using OpenGL"
+            return None
+        java = shutil.which(str(java_exe)) if not Path(str(java_exe)).is_absolute() else str(java_exe)
+        if not java or not Path(java).is_file():
+            self.last_note = "Java executable not found - using OpenGL"
+            return None
+        try:
+            self._prepare_root()
+            missing = self.ensure_engine(status)
+            if missing:
+                self.last_note = f"Translation engine incomplete (missing {', '.join(missing)}) - using OpenGL"
+                return None
+            arch = _pe_machine(self.engine_dir() / "opengl32.dll")
+            if arch and arch != _host_arch():
+                self.last_note = f"Engine is {arch} but this PC is {_host_arch()} - using OpenGL"
+                return None
+            if status:
+                status("Preparing D3D12 translation...")
+            shadow = self._shadow_jre(java)
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:                   # noqa: BLE001 - never block the game because of the optional layer
+            self.last_note = f"Translation setup failed ({e}) - using OpenGL"
+            return None
+        env = {
+            "GALLIUM_DRIVER": "d3d12",
+            "MESA_SHADER_CACHE_DIR": str(self.cache_dir),
+            "MESA_GLSL_CACHE_DIR": str(self.cache_dir),
+            "MESA_SHADER_CACHE_MAX_SIZE": "1G",
+        }
+        self.last_note = "Using OpenGL -> D3D12 translation"
+        return {"mode": "D3D12", "java": str(shadow), "env": env}
+
+    def record_launch(self, plan_used, crashed_early):
+        """Called by the UI after a game run. An early crash while translating makes Auto fall back to OpenGL."""
+        if not plan_used or not crashed_early:
+            return False
+        if self.mode() == "Auto":
+            self._save_state({"auto_off": True, "sig": self.engine_signature(), "time": time.time()})
+            return True
+        return False
+
+    def clear(self):
+        """Deletes translated files (shader cache + shadow JRE). Engine DLLs stay. Returns bytes freed."""
+        freed = 0
+        for base in (APP_DIR / ".translation", APP_DIR / "translation"):
+            for sub in ("cache", "jre"):
+                path = base / sub
+                if path.exists():
+                    if sub == "cache":
+                        freed += dir_size(path)
+                    rmtree_safe(path)
+        return freed
+
+
+
 class Launcher:
     def __init__(self, cfg):
         self.cfg = cfg
         self.lock = threading.Lock()
+        self.translation = Translation(cfg)
 
     # -- fast launch path: a version that was installed once is not re-verified / re-downloaded --
     @staticmethod
@@ -878,7 +1725,7 @@ class Launcher:
         options = {
             "username": self.cfg.get("username"), "uuid": self.cfg.offline_uuid(), "token": "",
             "jvmArguments": self.jvm_args(self.java_major(version_id)),
-            "launcherName": "Supersonic Client", "launcherVersion": "2.5.0",
+            "launcherName": "Supersonic Client", "launcherVersion": "2.6.0",
             "gameDirectory": str(inst.dir),
         }
         if server:
@@ -886,11 +1733,19 @@ class Launcher:
             options["server"] = host
             if port:
                 options["port"] = port
-        status("Starting game...")
         cmd = mll.command.get_minecraft_command(version_id, str(MC_ROOT), options)
+        plan = self.translation.plan(cmd[0], status)          # None = plain OpenGL
+        env = None
+        if plan:
+            cmd[0] = plan["java"]
+            env = dict(os.environ, **plan["env"])
+        status("Starting game...")
         log = open(inst.dir / "launcher_output.log", "wb")
-        return subprocess.Popen(cmd, cwd=str(inst.dir), stdout=log, stderr=subprocess.STDOUT,
-                                creationflags=NO_WINDOW)
+        proc = subprocess.Popen(cmd, cwd=str(inst.dir), stdout=log, stderr=subprocess.STDOUT,
+                                creationflags=NO_WINDOW, env=env)
+        proc.translation = plan["mode"] if plan else None     # read by the UI (crash fallback, log line)
+        proc.translation_note = self.translation.last_note
+        return proc
 
 
 # ----------------------------------------------------------------------------

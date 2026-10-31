@@ -1,4 +1,4 @@
-"""Supersonic Client v2.5.0 - UI (CustomTkinter). Run: python main.py"""
+"""Supersonic Client v2.6.0 - UI (CustomTkinter). Run: python main.py"""
 import hashlib
 import json
 import threading
@@ -1322,6 +1322,22 @@ class SettingsPage(Page):
                 ("Sync Across Devices", "Keep data synced across devices.", "switch", "sync_devices", None, {}),
                 ("Backup Instances", "Backup the selected instance.", "button", "Manage", self.backup, {}),
                 ("Restore from Backup", "Restore an instance from a backup zip.", "button", "Restore", self.restore, {})]),
+            ("TRANSLATION", [
+                ("OpenGL → D3D12", "Windows only. Auto picks D3D12 when your PC supports it.", "menu",
+                 "translation_mode", list(B.TRANSLATION_MODES), dict(after=self.translation_changed)),
+                ("Translated Files", "Where translated files used by GPU/CPU while playing are kept.", "menu",
+                 "translation_folder", list(B.TRANSLATION_FOLDERS), dict(width=160)),
+                ("Translation Folder", "Open the folder with translated files.", "button", "Open Folder",
+                 self.open_translation, {}),
+                ("Translated Cache", "Delete translated shader files (rebuilt automatically).", "button", "Clear",
+                 self.clear_translation, {})]),
+            ("SUPERSONIC MODS", [
+                ("Auto Install Mods", "Install mods from the Supersonic mods repo for supported versions.", "switch",
+                 "auto_custom_mods", None, {}),
+                ("Check for New Mods", "New mods are also checked every time the app starts.", "button",
+                 "Check Now", lambda: self.app.sync_custom_mods(manual=True), {}),
+                ("Mods Repository", "Open the GitHub repository with the mods.", "button", "Open",
+                 lambda: webbrowser.open(f"https://github.com/{self.app.custom_mods.repo}"), {})]),
         ]
         for i, (title, rows) in enumerate(sections):
             c = card(scroll)
@@ -1329,6 +1345,14 @@ class SettingsPage(Page):
             label(c, title, 12, "bold").pack(anchor="w", padx=16, pady=(14, 4))
             for r in rows:
                 self.row(c, *r)
+            if title == "TRANSLATION":
+                self.tr_status = label(c, self.translation_text(), 10, color=MUTED, anchor="w", justify="left",
+                                       wraplength=290)
+                self.tr_status.pack(anchor="w", padx=16, pady=(2, 12))
+            elif title == "SUPERSONIC MODS":
+                self.mods_status = label(c, self.mods_text(), 10, color=MUTED, anchor="w", justify="left",
+                                         wraplength=290)
+                self.mods_status.pack(anchor="w", padx=16, pady=(2, 12))
         self.build_side()
 
     def row(self, parent, title, desc, kind, key, values, opts):
@@ -1342,13 +1366,51 @@ class SettingsPage(Page):
         if kind == "menu":
             show, conv = opts.get("show", str), opts.get("conv", str)
             var = ctk.StringVar(value=show(cfg.get(key)))
-            menu(r, values, var, lambda v: cfg.set(key, conv(v)), 120).pack(side="right")
+            after = opts.get("after")
+
+            def changed(v, key=key, conv=conv, after=after):
+                cfg.set(key, conv(v))
+                if after:
+                    after()
+            menu(r, values, var, changed, opts.get("width", 120)).pack(side="right")
         elif kind == "switch":
             var = ctk.BooleanVar(value=bool(cfg.get(key)))
             ctk.CTkSwitch(r, text="", width=44, variable=var, progress_color=BLUE,
                           command=lambda: cfg.set(key, var.get())).pack(side="right")
         else:
             button(r, key, values, primary=False, width=90, height=28, font=F(12)).pack(side="right")
+
+    # -- translation / mods helpers --
+    def translation_text(self):
+        tr = self.app.launcher.translation
+        folder = "hidden" if tr.hidden else "visible"
+        return f"{tr.describe()}\nTranslated files folder: {folder}"
+
+    def translation_changed(self):
+        self.app.launcher.translation.reset_state()      # a new choice clears an automatic OpenGL fallback
+        self.refresh_status()
+
+    def open_translation(self):
+        tr = self.app.launcher.translation
+        tr._prepare_root()
+        B.open_path(tr.root)
+
+    def clear_translation(self):
+        freed = self.app.launcher.translation.clear()
+        self.app.log(f"Cleared {freed / 1e6:.0f} MB of translated files")
+        self.app.toast(f"✓ Cleared {freed / 1e6:.0f} MB of translated files", GREEN)
+
+    def mods_text(self):
+        info = self.app.custom_mods.info()
+        when = time.strftime("%d %b %H:%M", time.localtime(info["checked"])) if info["checked"] else "never"
+        return f"{info['files']} mods in repo · {info['installed']} installed · last check: {when}"
+
+    def refresh_status(self):
+        try:
+            self.tr_status.configure(text=self.translation_text())
+            self.mods_status.configure(text=self.mods_text())
+        except Exception:
+            pass
 
     def build_side(self):
         side = ctk.CTkFrame(self, fg_color="transparent", width=300)
@@ -1380,7 +1442,7 @@ class SettingsPage(Page):
         about = card(side, width=300)
         about.pack(fill="x")
         label(about, "ABOUT", 12, "bold").pack(anchor="w", padx=14, pady=(12, 4))
-        label(about, "Supersonic Client v2.5.0", 13, "bold").pack(anchor="w", padx=14)
+        label(about, "Supersonic Client v2.6.0", 13, "bold").pack(anchor="w", padx=14)
         label(about, "The next generation Minecraft launcher.", 11, color=MUTED).pack(anchor="w", padx=14, pady=(0, 14))
 
     def on_show(self):
@@ -1455,6 +1517,8 @@ class App(ctk.CTk):
         self.cfg = B.Config()
         self.mgr = B.InstanceManager()
         self.launcher = B.Launcher(self.cfg)
+        self.custom_mods = B.CustomMods(self.cfg)
+        self.mods_busy = False
         self.mr, self.cf = B.Modrinth(), B.CurseForge(self.cfg)
         self.packs = B.PackInstaller(self.cfg, self.mgr, self.cf)
         self.store = B.Store(self.mr, self.cf)
@@ -1463,7 +1527,7 @@ class App(ctk.CTk):
         self.logs, self.panels, self.icon_urls, self.icon_waiters = [], [], {}, []
         self.running = self.busy_addons = self.busy_pack = False
         self._toast_id = None
-        self.title("Supersonic Client v2.5.0")
+        self.title("Supersonic Client v2.6.0")
         self.geometry("1440x900")
         self.minsize(1240, 780)
         self.configure(fg_color=BG)
@@ -1488,6 +1552,7 @@ class App(ctk.CTk):
         self.bg(self.load_addon_icons)
         self.warm_instance()
         self.log("Supersonic Client started")
+        self.after(1500, self.sync_custom_mods)          # check the mods repo for new / updated mods
 
     # -- threading helpers --
     def ui(self, fn, *args):
@@ -1651,6 +1716,38 @@ class App(ctk.CTk):
         self.icon_waiters = []
 
     # -- actions --
+    def sync_custom_mods(self, manual=False):
+        """Installs / updates the Supersonic repo mods in all matching instances (runs in the background)."""
+        if self.mods_busy or not (manual or self.cfg.get("auto_custom_mods")):
+            return
+        self.mods_busy = True
+        if manual:
+            self.toast("Checking Supersonic mods...")
+
+        def work():
+            try:
+                rep = self.custom_mods.sync(list(self.mgr.items), prune=True)
+                done = self.custom_mods.summary(rep)
+                for key in ("installed", "updated", "removed", "skipped"):
+                    for line in rep[key]:
+                        self.log(f"Supersonic mods - {key}: {line}")
+                for name in rep["new_in_repo"]:
+                    self.log(f"New mod in Supersonic repo: {name}")
+                for err in rep["errors"]:
+                    self.log(f"Supersonic mods warning: {err}")
+                if done:
+                    self.ui(self.toast, f"✓ Supersonic mods: {done}", GREEN)
+                elif manual and rep["errors"]:
+                    self.ui(self.toast, rep["errors"][0], AMBER)
+                elif manual:
+                    self.ui(self.toast, "✓ Supersonic mods are up to date", GREEN)
+            except Exception as e:                       # noqa: BLE001 - never break the app because of mods sync
+                self.log(f"Supersonic mods sync failed: {e}")
+            finally:
+                self.mods_busy = False
+                self.ui(self.pages["Settings"].refresh_status)
+        self.bg(work)
+
     def launch_game(self, server=None):
         if self.running:
             return
@@ -1661,13 +1758,26 @@ class App(ctk.CTk):
         dash.progress.place(relx=1, x=-26, y=162, anchor="ne")
 
         def work():
+            retry = False
             try:
+                if self.cfg.get("auto_custom_mods"):
+                    self.ui(dash.set_status, "Checking Supersonic mods...", CYAN)
+                    try:
+                        rep = self.custom_mods.ensure(inst)
+                        if rep["installed"] or rep["updated"] or rep["removed"]:
+                            self.log(f"Supersonic mods for {inst.name}: {self.custom_mods.summary(rep)}")
+                    except Exception as e:               # noqa: BLE001 - mods are optional, the game must still start
+                        self.log(f"Supersonic mods check skipped: {e}")
                 proc = self.launcher.launch(inst, lambda s: self.ui(dash.set_status, s, CYAN),
                                             lambda f: self.ui(dash.progress.set, f), server)
                 inst.last_played = time.time()
                 self.mgr.save()
                 self.ui(dash.set_status, "Game is running!", GREEN)
                 self.log(f"Launched {inst.name} ({inst.mc})")
+                if proc.translation:
+                    self.log("Rendering: OpenGL → D3D12 translation")
+                elif proc.translation_note and self.cfg.get("translation_mode") != "OpenGL":
+                    self.log(f"Rendering: OpenGL ({proc.translation_note})")
                 hide = not self.cfg.get("keep_launcher_open")
                 if hide:
                     self.ui(self.withdraw)
@@ -1675,9 +1785,14 @@ class App(ctk.CTk):
                 proc.wait()
                 if hide:
                     self.ui(self.deiconify)
-                if proc.returncode and time.time() - started < 25:
+                early_crash = bool(proc.returncode) and time.time() - started < 25
+                if early_crash and self.launcher.translation.record_launch(proc.translation, True):
+                    retry = True                         # Auto mode: D3D12 crashed, run again with plain OpenGL
+                    self.log("D3D12 translation crashed at start - switching to OpenGL")
+                    self.ui(self.toast, "D3D12 failed - restarting with OpenGL", AMBER)
+                elif early_crash:
                     self.launcher.invalidate(inst)      # next PLAY re-verifies game files once
-                if proc.returncode:
+                if proc.returncode and not retry:
                     self.log(f"Game exited with code {proc.returncode}")
                     self.ui(self.toast, "Game crashed - open Agent (AI) and press Scan & Fix", AMBER)
             except Exception as e:
@@ -1685,6 +1800,8 @@ class App(ctk.CTk):
                 self.log(f"Launch failed: {e}")
             finally:
                 self.ui(self.launch_done)
+                if retry:
+                    self.ui(self.launch_game, server)
         self.bg(work)
 
     def launch_done(self):
