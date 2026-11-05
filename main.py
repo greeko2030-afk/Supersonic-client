@@ -1,5 +1,7 @@
-"""Supersonic Client v2.6.0 - UI (CustomTkinter). Run: python main.py"""
+"""Supersonic Client - UI (CustomTkinter). Run: python main.py"""
+import base64
 import hashlib
+import io
 import json
 import threading
 import time
@@ -13,8 +15,14 @@ from PIL import Image, ImageDraw
 
 import backend as B
 
+try:
+    import logo_data                         # embedded Supersonic logo + icon (works inside the .exe too)
+except ImportError:                          # pragma: no cover - falls back to a drawn logo
+    logo_data = None
+
+VERSION = "2.5.0"
 ctk.set_appearance_mode("Dark")
-ASSETS = Path(__file__).parent / "assets"   # optional: logo.png, agent.png
+ASSETS = Path(__file__).parent / "assets"   # optional overrides: logo.png, icon.png, agent.png
 
 BG, PANEL, CARD, CARD2, BORDER = "#050810", "#080D18", "#0B1220", "#101A2E", "#18253D"
 BLUE, BLUE_H, CYAN, GREEN, PURPLE, AMBER, RED = "#2563EB", "#1D4ED8", "#38BDF8", "#22C55E", "#7C3AED", "#F59E0B", "#EF4444"
@@ -32,26 +40,34 @@ ADDONS = [
     ("Entity Culling", "entityculling", "Performance", "Optimizes entity rendering."),
     ("ImmediatelyFast", "immediatelyfast", "Performance", "Reduces CPU overhead."),
     ("More Culling", "moreculling", "Performance", "Culls more, gets more FPS."),
+    ("Cloth Config API", "cloth-config", "Libraries", "Config library for many mods."),
+    ("Mod Menu", "modmenu", "Utility", "Add a mod menu to the game."),
+    ("JEI (Just Enough Items)", "jei", "Gameplay", "View items and recipes easily."),
+    ("JourneyMap", "journeymap", "Gameplay", "Real-time mapping in your world."),
+    ("AppleSkin", "appleskin", "Utility", "Food stats HUD improvements."),
+    ("Mouse Tweaks", "mouse-tweaks", "Utility", "Inventory management."),
     ("Krypton", "krypton", "Performance", "Optimizes the network stack."),
     ("C2ME", "c2me-fabric", "Performance", "Faster chunk loading."),
+    ("ModernFix", "modernfix", "Performance", "Fixes lag, memory use and load time."),
     ("Continuity", "continuity", "Visuals", "Connected textures support."),
     ("LambDynamicLights", "lambdynamiclights", "Visuals", "Dynamic lighting from items."),
     ("Reese's Sodium Options", "reeses-sodium-options", "Visuals", "Better video settings screen."),
-    ("JEI (Just Enough Items)", "jei", "Gameplay", "View items and recipes easily."),
-    ("JourneyMap", "journeymap", "Gameplay", "Real-time mapping in your world."),
+    ("Sodium Extra", "sodium-extra", "Visuals", "Extra video options for Sodium."),
     ("Xaero's Minimap", "xaeros-minimap", "Gameplay", "Minimap with waypoints."),
     ("Xaero's World Map", "xaeros-world-map", "Gameplay", "Full world map screen."),
-    ("Mod Menu", "modmenu", "Utility", "Add a mod menu to the game."),
-    ("AppleSkin", "appleskin", "Utility", "Food stats HUD improvements."),
-    ("Mouse Tweaks", "mouse-tweaks", "Utility", "Inventory management."),
+    ("Jade", "jade", "Gameplay", "Shows info about what you look at."),
+    ("Zoomify", "zoomify", "Gameplay", "Configurable zoom key."),
     ("Inventory Profiles Next", "inventory-profiles-next", "Utility", "Sort and organize inventory."),
-    ("Terralith", "terralith", "World Gen", "Overhauled terrain generation."),
-    ("Tectonic", "tectonic", "World Gen", "Dramatic terrain shapes."),
-    ("Cloth Config API", "cloth-config", "Libraries", "Config library for many mods."),
+    ("No Chat Reports", "no-chat-reports", "Utility", "Disables chat reporting."),
     ("Fabric API", "fabric-api", "Libraries", "Core Fabric modding library."),
     ("Architectury API", "architectury-api", "Libraries", "Cross-loader mod library."),
+    ("Fabric Language Kotlin", "fabric-language-kotlin", "Libraries", "Kotlin support for Fabric mods."),
 ]
 ADDON_MAP = {a[0]: a for a in ADDONS}
+# short captions used on the Dashboard tiles
+SHORT_DESC = {"Sodium": "Boosts FPS", "Iris Shaders": "Shaders Mod", "Lithium": "Performance", "Indium": "Better Mod Compat",
+              "Phosphor": "Lighting Engine", "FerriteCore": "Memory Usage", "Starlight": "Lighting Optimizer",
+              "Entity Culling": "Optimized Entities", "ImmediatelyFast": "Performance Boost", "More Culling": "Extra Culling"}
 ESSENTIALS = [a[0] for a in ADDONS[:10]]
 ADDON_TABS = ["All Addons", "Performance", "Visuals", "Gameplay", "Utility", "World Gen", "Libraries"]
 MC_VERSIONS = ["1.21.4", "1.21.1", "1.20.6", "1.20.4", "1.20.1", "1.19.4", "1.18.2", "1.16.5"]
@@ -106,17 +122,63 @@ def menu(parent, values, variable=None, command=None, width=150):
                              dropdown_fg_color=CARD2, font=F(12))
 
 
+_LOGO_CACHE = {}
+
+
+def _embedded(name):
+    data = getattr(logo_data, name, None) if logo_data else None
+    return Image.open(io.BytesIO(base64.b64decode(data))).convert("RGBA") if data else None
+
+
 def make_logo(px):
-    path = ASSETS / "logo.png"
-    if path.exists():
-        return Image.open(path).convert("RGBA").resize((px, px), Image.LANCZOS)
-    s = px * 4
-    im = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    d.ellipse((s * .04, s * .04, s * .96, s * .96), outline=(56, 189, 248, 255), width=max(2, s // 28))
-    bolt = [(.56, .10), (.24, .55), (.46, .55), (.38, .90), (.76, .42), (.52, .42)]
-    d.polygon([(x * s, y * s) for x, y in bolt], fill=(37, 99, 235, 255), outline=(125, 211, 252, 255))
-    return im.resize((px, px), Image.LANCZOS)
+    """The Supersonic logo as a PIL image: assets/logo.png if present, else the embedded one, else a drawn bolt."""
+    if px not in _LOGO_CACHE:
+        path = ASSETS / "logo.png"
+        base = Image.open(path).convert("RGBA") if path.exists() else _embedded("LOGO_PNG")
+        if base is not None:
+            _LOGO_CACHE[px] = base.resize((px, px), Image.LANCZOS)
+        else:
+            s = px * 4
+            im = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+            d = ImageDraw.Draw(im)
+            d.ellipse((s * .04, s * .04, s * .96, s * .96), outline=(56, 189, 248, 255), width=max(2, s // 28))
+            bolt = [(.56, .10), (.24, .55), (.46, .55), (.38, .90), (.76, .42), (.52, .42)]
+            d.polygon([(x * s, y * s) for x, y in bolt], fill=(37, 99, 235, 255), outline=(125, 211, 252, 255))
+            _LOGO_CACHE[px] = im.resize((px, px), Image.LANCZOS)
+    return _LOGO_CACHE[px]
+
+
+def set_window_icon(win):
+    """Taskbar / title-bar icon. CustomTkinter resets the icon shortly after start-up on Windows, so set it late."""
+    try:
+        icon = ASSETS / "icon.png"
+        img = Image.open(icon).convert("RGBA") if icon.exists() else _embedded("ICON_PNG")
+        if img is None:
+            return
+        ico = B.APP_DIR / "icon.ico"
+        B.APP_DIR.mkdir(parents=True, exist_ok=True)
+        img.save(ico, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+
+        def apply():
+            try:
+                if B.platform.system() == "Windows":
+                    win.iconbitmap(str(ico))
+                else:
+                    import tkinter
+                    win._icon_ref = tkinter.PhotoImage(data=base64.b64encode(_png_bytes(img.resize((128, 128)))))
+                    win.iconphoto(True, win._icon_ref)
+            except Exception:
+                pass
+        win.after(250, apply)
+        win.after(900, apply)
+    except Exception:
+        pass
+
+
+def _png_bytes(im):
+    buf = io.BytesIO()
+    im.save(buf, "PNG")
+    return buf.getvalue()
 
 
 def cover(im, size, radius=10, scale=2):
@@ -139,6 +201,286 @@ def sparkline(parent, color, rising=True, w=90, h=28):
         pts += [w * i / 4, y if rising else h - y]
     cv.create_line(*pts, fill=color, width=2, smooth=True)
     return cv
+
+
+# ----------------------------------------------------------------------------
+# Drawn artwork (PIL): line icons, header banner, agent robot - crisp at any size, no extra files
+# ----------------------------------------------------------------------------
+def _hex(color):
+    color = color.lstrip("#")
+    return tuple(int(color[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def line_icon(name, px=22, color=MUTED, stroke=2.0):
+    """Outline icon drawn on a 24x24 grid, 4x supersampled. Returns a PIL RGBA image of px x px."""
+    k = 4 * 4
+    im = Image.new("RGBA", (24 * k, 24 * k), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    col, w = _hex(color) + (255,), int((1.6 if name == "servers" else stroke) * k)
+
+    def P(*pts):
+        return [(x * k, y * k) for x, y in pts]
+
+    def line(*pts):
+        d.line(P(*pts), fill=col, width=w, joint="curve")
+        for x, y in P(pts[0], pts[-1]):
+            d.ellipse((x - w / 2, y - w / 2, x + w / 2, y + w / 2), fill=col)
+
+    def poly(*pts):
+        line(*pts, pts[0])
+
+    def circle(cx, cy, r, fill=False):
+        box = ((cx - r) * k, (cy - r) * k, (cx + r) * k, (cy + r) * k)
+        d.ellipse(box, outline=None if fill else col, fill=col if fill else None, width=w)
+
+    def rrect(x0, y0, x1, y1, r, clear=False):
+        d.rounded_rectangle((x0 * k, y0 * k, x1 * k, y1 * k), r * k, outline=col, width=w,
+                            fill=(0, 0, 0, 0) if clear else None)
+
+    if name == "home":
+        line((3, 11.5), (12, 3.5), (21, 11.5))
+        line((5.5, 10), (5.5, 20.5), (18.5, 20.5), (18.5, 10))
+        line((10, 20.5), (10, 14), (14, 14), (14, 20.5))
+    elif name == "cube":
+        poly((12, 2.5), (20, 7), (20, 17), (12, 21.5), (4, 17), (4, 7))
+        line((4, 7), (12, 11.8), (20, 7))
+        line((12, 11.8), (12, 21.5))
+    elif name == "puzzle":
+        circle(10.5, 5.2, 2.6)
+        circle(19.8, 14, 2.6)
+        rrect(3.5, 7, 18, 21, 2.2, clear=True)
+    elif name == "servers":
+        for y in (3.5, 9.5, 15.5):
+            rrect(3.5, y, 20.5, y + 5, 1.6)
+            circle(7, y + 2.5, 0.9, fill=True)
+    elif name == "image":
+        rrect(3, 4, 21, 20, 2.2)
+        line((3.5, 17), (9, 11.5), (13.5, 16), (16.5, 13), (20.5, 17))
+        circle(16.5, 8.5, 1.5)
+    elif name in ("worlds", "globe"):
+        circle(12, 12, 9)
+        d.ellipse((7.6 * k, 3 * k, 16.4 * k, 21 * k), outline=col, width=w)
+        line((3, 12), (21, 12))
+        line((4.4, 7.5), (19.6, 7.5))
+        line((4.4, 16.5), (19.6, 16.5))
+    elif name == "os":
+        for x0, y0 in ((3, 3), (12.6, 3), (3, 12.6), (12.6, 12.6)):
+            d.rectangle((x0 * k, y0 * k, (x0 + 8.4) * k, (y0 + 8.4) * k), fill=col)
+    elif name == "cpu":
+        rrect(6, 6, 18, 18, 1.8)
+        rrect(9.6, 9.6, 14.4, 14.4, 0.8)
+        for t in (9.5, 12, 14.5):
+            line((t, 3), (t, 6))
+            line((t, 18), (t, 21))
+            line((3, t), (6, t))
+            line((18, t), (21, t))
+    elif name == "ram":
+        rrect(3, 6.5, 21, 16, 1.6)
+        for x in (6.5, 10, 13.5, 17):
+            d.rectangle(((x - .7) * k, 9.2 * k, (x + .7) * k, 13 * k), fill=col)
+            line((x, 16), (x, 19.5))
+    elif name == "gpu":
+        rrect(2.5, 5.5, 21.5, 17, 1.8)
+        circle(12, 11.2, 3.3)
+        circle(12, 11.2, 0.8, fill=True)
+        line((6, 17), (6, 20))
+        line((18, 17), (18, 20))
+    elif name == "disk":
+        rrect(3.5, 3.5, 20.5, 20.5, 2.4)
+        line((3.5, 14), (20.5, 14))
+        circle(16.5, 17.2, 0.9, fill=True)
+    elif name == "bolt":
+        poly((13.5, 2.5), (5, 13.5), (11, 13.5), (10, 21.5), (19, 10), (13, 10))
+    elif name == "trash":
+        line((4, 6.5), (20, 6.5))
+        line((9, 6.5), (9, 3.8), (15, 3.8), (15, 6.5))
+        line((6, 6.5), (7, 20.5), (17, 20.5), (18, 6.5))
+        line((10.5, 10.5), (10.5, 17))
+        line((13.5, 10.5), (13.5, 17))
+    elif name == "refresh":
+        d.arc((4 * k, 4 * k, 20 * k, 20 * k), 40, 320, fill=col, width=w)
+        d.polygon(P((19.6, 3.2), (20.4, 9.6), (14, 8.6)), fill=col)
+    elif name == "chevron":
+        line((9, 5), (16, 12), (9, 19))
+    elif name == "search":
+        circle(10.5, 10.5, 6.5)
+        line((15.4, 15.4), (20.5, 20.5))
+    elif name == "download":
+        line((12, 3.5), (12, 14.5))
+        line((7, 10), (12, 15), (17, 10))
+        line((4, 17.5), (4, 20.5), (20, 20.5), (20, 17.5))
+    elif name == "gear":
+        import math
+        pts = []
+        for i in range(16):
+            a0 = math.pi * 2 * i / 16 - math.pi / 16
+            r = 9.4 if i % 2 == 0 else 7.2
+            pts.append((12 + r * math.cos(a0), 12 + r * math.sin(a0)))
+        poly(*pts)
+        circle(12, 12, 3.2)
+    elif name == "robot":
+        rrect(5, 8, 19, 20, 3.5)
+        line((12, 8), (12, 4.5))
+        circle(12, 3.6, 1.1, fill=True)
+        circle(9, 13.5, 1.4, fill=True)
+        circle(15, 13.5, 1.4, fill=True)
+        line((3, 12), (3, 16))
+        line((21, 12), (21, 16))
+        line((10, 17), (14, 17))
+    elif name == "discord":
+        rrect(3, 6, 21, 18, 5.5)
+        circle(9, 12, 1.3, fill=True)
+        circle(15, 12, 1.3, fill=True)
+    elif name == "github":
+        circle(12, 13, 8)
+        poly((5.2, 9), (5, 3.8), (9.4, 6.4))
+        poly((18.8, 9), (19, 3.8), (14.6, 6.4))
+        line((9, 21), (9, 18))
+        line((15, 21), (15, 18))
+    return im.resize((px * 2, px * 2), Image.LANCZOS)
+
+
+def chip_icon(name, px=18):
+    """Small coloured icons for the dashboard chips (Minecraft block, rocket, calendar)."""
+    k = 16
+    im = Image.new("RGBA", (24 * k, 24 * k), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+
+    def P(*pts):
+        return [(x * k, y * k) for x, y in pts]
+    if name == "block":
+        d.polygon(P((12, 3), (21, 7.5), (12, 12), (3, 7.5)), fill=(106, 190, 48, 255))
+        d.polygon(P((3, 7.5), (12, 12), (12, 21.5), (3, 17)), fill=(134, 96, 67, 255))
+        d.polygon(P((21, 7.5), (12, 12), (12, 21.5), (21, 17)), fill=(96, 68, 48, 255))
+        d.polygon(P((3, 7.5), (12, 12), (12, 14), (3, 9.6)), fill=(78, 150, 36, 255))
+    elif name == "rocket":
+        d.polygon(P((12, 2), (16.5, 8), (15.5, 17), (8.5, 17), (7.5, 8)), fill=(226, 232, 244, 255))
+        d.polygon(P((7.5, 11), (4, 17), (8.5, 15.5)), fill=(99, 102, 241, 255))
+        d.polygon(P((16.5, 11), (20, 17), (15.5, 15.5)), fill=(99, 102, 241, 255))
+        d.ellipse((10 * k, 7.5 * k, 14 * k, 11.5 * k), fill=(56, 189, 248, 255))
+        d.polygon(P((9.5, 17), (14.5, 17), (12, 22.5)), fill=(249, 115, 22, 255))
+    elif name == "calendar":
+        col = (186, 196, 214, 255)
+        d.rounded_rectangle((3.5 * k, 5 * k, 20.5 * k, 20.5 * k), 2.5 * k, outline=col, width=int(1.8 * k))
+        d.line(P((3.5, 10), (20.5, 10)), fill=col, width=int(1.8 * k))
+        d.line(P((8, 3), (8, 7)), fill=col, width=int(1.8 * k))
+        d.line(P((16, 3), (16, 7)), fill=col, width=int(1.8 * k))
+        d.ellipse((11 * k, 13 * k, 14.4 * k, 16.4 * k), fill=(56, 189, 248, 255))
+    return im.resize((px * 2, px * 2), Image.LANCZOS)
+
+
+def header_banner(w=620, h=44):
+    """Glowing slanted banner behind the header tagline."""
+    from PIL import ImageFilter
+    s = 2
+    W, H, sl = w * s, h * s, 26 * s
+    pts = [(sl, 6 * s), (W - sl, 6 * s), (W - 4 * s, H - 8 * s), (4 * s, H - 8 * s)]
+    glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glow)
+    gd.line(pts + [pts[0]], fill=(56, 189, 248, 255), width=5 * s)
+    glow = glow.filter(ImageFilter.GaussianBlur(5 * s))
+    im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(im).polygon(pts, fill=(8, 22, 48, 235))
+    im.alpha_composite(glow)
+    d = ImageDraw.Draw(im)
+    d.line([pts[3], pts[2]], fill=(56, 189, 248, 255), width=2 * s)                # bright bottom edge
+    d.line([pts[0], pts[3]], fill=(30, 110, 190, 255), width=2 * s)
+    d.line([pts[1], pts[2]], fill=(30, 110, 190, 255), width=2 * s)
+    d.line([pts[0], pts[1]], fill=(20, 60, 110, 255), width=1 * s)
+    return im.resize((w, h), Image.LANCZOS)
+
+
+def robot_image(px=200):
+    """The friendly Agent (AI) robot mascot."""
+    from PIL import ImageFilter
+    s, W = 3, px * 3
+    im = Image.new("RGBA", (W, W), (0, 0, 0, 0))
+    u = W / 300.0
+
+    def R(x0, y0, x1, y1):
+        return (x0 * u, y0 * u, x1 * u, y1 * u)
+    glow = Image.new("RGBA", (W, W), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).ellipse(R(40, 215, 260, 295), fill=(56, 189, 248, 90))
+    im.alpha_composite(glow.filter(ImageFilter.GaussianBlur(14 * u)))
+    d = ImageDraw.Draw(im)
+    d.rounded_rectangle(R(95, 205, 205, 285), 38 * u, fill=(226, 232, 244, 255))                  # body
+    d.rounded_rectangle(R(130, 222, 170, 250), 10 * u, fill=(18, 30, 58, 255))
+    d.ellipse(R(144, 230, 156, 242), fill=(56, 189, 248, 255))
+    d.ellipse(R(62, 214, 106, 262), fill=(214, 222, 238, 255))                                     # arms
+    d.ellipse(R(194, 214, 238, 262), fill=(214, 222, 238, 255))
+    for x0 in (30, 252):                                                                          # headphones
+        d.rounded_rectangle(R(x0, 95, x0 + 24, 160), 11 * u, fill=(37, 99, 235, 255))
+    d.rounded_rectangle(R(52, 38, 248, 205), 62 * u, fill=(236, 241, 250, 255))                    # head
+    d.rounded_rectangle(R(52, 150, 248, 205), 62 * u, fill=(208, 217, 234, 255))
+    d.rounded_rectangle(R(52, 38, 248, 190), 62 * u, fill=(238, 243, 252, 255))
+    d.rounded_rectangle(R(76, 70, 224, 165), 44 * u, fill=(8, 14, 34, 255))                        # visor
+    eyes = Image.new("RGBA", (W, W), (0, 0, 0, 0))
+    ed = ImageDraw.Draw(eyes)
+    for cx in (121, 179):
+        ed.rounded_rectangle(R(cx - 13, 95, cx + 13, 135), 13 * u, fill=(34, 211, 238, 255))
+    ed.arc(R(133, 118, 167, 150), 20, 160, fill=(34, 211, 238, 255), width=int(5 * u))
+    im.alpha_composite(eyes.filter(ImageFilter.GaussianBlur(5 * u)))
+    im.alpha_composite(eyes)
+    return im.resize((px, px), Image.LANCZOS)
+
+
+def shield_image(px=54):
+    """Green check-shield shown on the Addons page when everything is up to date."""
+    s = 4
+    W = px * s
+    im = Image.new("RGBA", (W, W), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    pts = [(.5, .04), (.9, .18), (.9, .52), (.5, .96), (.1, .52), (.1, .18)]
+    d.polygon([(x * W, y * W) for x, y in pts], fill=(21, 128, 61, 255))
+    inner = [(.5, .12), (.82, .23), (.82, .5), (.5, .86), (.18, .5), (.18, .23)]
+    d.polygon([(x * W, y * W) for x, y in inner], fill=(34, 197, 94, 255))
+    d.line([(.32 * W, .48 * W), (.46 * W, .62 * W), (.70 * W, .34 * W)], fill=(6, 40, 20, 255), width=int(.09 * W), joint="curve")
+    return im.resize((px, px), Image.LANCZOS)
+
+
+def shield_img(px=54):
+    return _cached(("shield", px), lambda: shield_image(px), (px, px))
+
+
+def badge_img(name, fg, bg, px=38):
+    """Rounded colour tile with a line icon on it (Quick Actions)."""
+    s = 4
+    W = px * s
+    tile = Image.new("RGBA", (W, W), (0, 0, 0, 0))
+    ImageDraw.Draw(tile).rounded_rectangle((0, 0, W - 1, W - 1), 9 * s, fill=_hex(bg) + (255,))
+    ic = line_icon(name, int(px * .56), fg).resize((int(px * .56) * s, int(px * .56) * s), Image.LANCZOS)
+    tile.alpha_composite(ic, ((W - ic.width) // 2, (W - ic.height) // 2))
+    return tile.resize((px, px), Image.LANCZOS)
+
+
+def badge_icon(name, fg, bg, px=38):
+    return _cached(("badge", name, fg, bg, px), lambda: badge_img(name, fg, bg, px), (px, px))
+
+
+_ART = {}
+
+
+def _cached(key, make, size):
+    if key not in _ART:
+        im = make()
+        _ART[key] = ctk.CTkImage(light_image=im, dark_image=im, size=size)
+    return _ART[key]
+
+
+def icon_img(name, px=22, color=MUTED):
+    return _cached(("icon", name, px, color), lambda: line_icon(name, px, color), (px, px))
+
+
+def chip_img(name, px=18):
+    return _cached(("chip", name, px), lambda: chip_icon(name, px), (px, px))
+
+
+def banner_img(w=620, h=44):
+    return _cached(("banner", w, h), lambda: header_banner(w, h), (w, h))
+
+
+def robot_img(px=120):
+    return _cached(("robot", px), lambda: robot_image(px * 2), (px, px))
 
 
 class ImageStore:
@@ -267,8 +609,11 @@ def make_pack_card(parent, app, pack, full=True, badge=None):
         stats.pack(anchor="w", padx=10)
         label(stats, f"⬇ {B.fmt_num(pack['downloads'])}", 11, color=MUTED).pack(side="left")
         label(stats, f"   ♥ {B.fmt_num(pack['rating'])}", 11, color=AMBER).pack(side="left")
+    if not full:
+        tag = (pack.get("tags") or ["Modpack"])[0]
+        label(c, f"⚡ {tag}", 9, color=MUTED, anchor="w").pack(anchor="w", padx=10, pady=(0, 8), side="bottom")
     button(c, "⬇  Install", lambda: app.install_pack(pack), height=30 if full else 26,
-           font=F(12, "bold")).pack(fill="x", padx=10, pady=10, side="bottom")
+           font=F(12, "bold")).pack(fill="x", padx=10, pady=(10, 6 if not full else 10), side="bottom")
     return c
 
 
@@ -281,19 +626,22 @@ class AgentPanel(ctk.CTkFrame):
         self.app = app
         app.panels.append(self)
         if not big:
-            self.configure(width=310)
+            self.configure(width=290)
             self.pack_propagate(False)
         head = ctk.CTkFrame(self, fg_color="transparent")
         head.pack(fill="x", padx=16, pady=(14, 0))
         label(head, "AGENT (AI)", 15, "bold").pack(side="left")
         label(head, " BETA ", 9, "bold", "white", fg_color=BLUE, corner_radius=5).pack(side="left", padx=8)
         label(self, "Your personal AI assistant", 11, color=MUTED).pack(anchor="w", padx=16)
-        bot = label(self, "🤖", 54, width=120, height=90)
-        bot.pack(pady=(4, 0))
+        bot = label(self, "", image=robot_img(150))
+        bot.pack(pady=(2, 0))
         if (ASSETS / "agent.png").exists():
-            img = ctk.CTkImage(Image.open(ASSETS / "agent.png"), size=(110, 110))
-            bot.configure(image=img, text="")
-        label(self, "●  Agent Online", 12, color=GREEN).pack(anchor="w", padx=16, pady=(2, 6))
+            bot.configure(image=ctk.CTkImage(Image.open(ASSETS / "agent.png"), size=(130, 130)))
+        online = ctk.CTkFrame(self, fg_color="transparent")
+        online.pack(fill="x", padx=16, pady=(2, 6))
+        label(online, "●", 12, color=GREEN).pack(side="left")
+        label(online, "  Agent Online", 12, color=TXT).pack(side="left")
+        label(online, "⌄", 12, color=MUTED).pack(side="right")
         self.chat = ctk.CTkTextbox(self, height=400 if big else 150, fg_color=CARD2, corner_radius=10,
                                    font=F(12), wrap="word")
         self.chat.pack(fill="both" if big else "x", expand=big, padx=12)
@@ -308,6 +656,8 @@ class AgentPanel(ctk.CTkFrame):
         row = ctk.CTkFrame(self, fg_color="transparent")
         row.pack(fill="x", padx=16)
         label(row, "Recent Logs", 12, "bold").pack(side="left")
+        ctk.CTkButton(row, text="View all", width=50, height=20, fg_color="transparent", hover=False, text_color=CYAN,
+                      font=F(11), command=lambda: app.show("Agent (AI)")).pack(side="right")
         self.logs = label(self, "", 10, color=MUTED, anchor="w", justify="left", wraplength=270)
         self.logs.pack(anchor="w", padx=16, pady=(2, 6))
         bar = ctk.CTkFrame(self, fg_color="transparent")
@@ -365,28 +715,36 @@ class DashboardPage(Page):
         AgentPanel(self, app).grid(row=0, column=1, sticky="ns")
 
     def build_hero(self, parent):
-        hero = card(parent, corner_radius=14, height=190)
+        hero = card(parent, corner_radius=14, height=215)
         hero.grid(row=0, column=0, sticky="ew", pady=(0, 12))
-        label(hero, "SUPERSONIC CLIENT", 34, "bold").place(x=28, y=20)
-        hero.winfo_children()[0].configure(font=F(34, "bold", True))
-        label(hero, "Hyper optimized. Ultra fast. Future ready.", 15, color=TXT).place(x=30, y=72)
-        logo = label(hero, "", image=ctk.CTkImage(make_logo(256), size=(170, 170)))
-        logo.place(relx=.62, rely=.5, anchor="center")
+        hero.grid_propagate(False)
+        title = label(hero, "SUPERSONIC CLIENT", 36, "bold")
+        title.configure(font=F(36, "bold", True))
+        title.place(x=28, y=22)
+        label(hero, "Hyper optimized. Ultra fast. Future ready.", 16, color=TXT).place(x=30, y=82)
+        logo = label(hero, "", image=ctk.CTkImage(make_logo(512), size=(250, 250)), fg_color=CARD)
+        logo.place(relx=.64, rely=.5, anchor="center")
         chips = ctk.CTkFrame(hero, fg_color="transparent")
-        chips.place(x=28, y=130)
-        self.chip_mc = label(chips, "", 12, fg_color=CARD2, corner_radius=8, height=34)
-        self.chip_perf = label(chips, "", 12, fg_color=CARD2, corner_radius=8, height=34)
-        self.chip_last = label(chips, "", 12, fg_color=CARD2, corner_radius=8, height=34)
-        for c in (self.chip_mc, self.chip_perf, self.chip_last):
-            c.pack(side="left", padx=(0, 8))
-        self.play_btn = button(hero, "▶  PLAY", self.app.launch_game, width=230, height=60, font=F(24, "bold"))
-        self.play_btn.place(relx=1, x=-26, y=20, anchor="ne")
+        chips.place(x=28, y=150)
+        self.chips = {}
+        for key, icon in (("mc", "block"), ("perf", "rocket"), ("last", "calendar")):
+            box = ctk.CTkFrame(chips, fg_color=CARD2, corner_radius=8, height=38, border_width=1, border_color=BORDER)
+            box.pack(side="left", padx=(0, 10))
+            label(box, "", image=chip_img(icon, 18)).pack(side="left", padx=(10, 6), pady=8)
+            key_lbl = label(box, "", 12, color=TXT)
+            key_lbl.pack(side="left")
+            val_lbl = label(box, "", 12, color=GREEN)
+            val_lbl.pack(side="left", padx=(4, 12))
+            self.chips[key] = (key_lbl, val_lbl)
+        self.play_btn = button(hero, "▶  PLAY", self.app.launch_game, width=230, height=64, font=F(26, "bold"),
+                               corner_radius=10)
+        self.play_btn.place(relx=1, x=-26, y=22, anchor="ne")
         self.inst_var = ctk.StringVar()
         self.inst_menu = menu(hero, [""], self.inst_var, self.select_instance, width=230)
-        self.inst_menu.configure(height=34)
-        self.inst_menu.place(relx=1, x=-26, y=92, anchor="ne")
+        self.inst_menu.configure(height=38, fg_color=CARD2, button_color=CARD2, font=F(13))
+        self.inst_menu.place(relx=1, x=-26, y=100, anchor="ne")
         self.status = label(hero, "Ready to launch", 11, "bold", GREEN)
-        self.status.place(relx=1, x=-26, y=134, anchor="ne")
+        self.status.place(relx=1, x=-26, y=150, anchor="ne")
         self.progress = ctk.CTkProgressBar(hero, width=230, height=6, progress_color=CYAN, fg_color=BORDER)
         self.progress.set(0)
 
@@ -413,7 +771,7 @@ class DashboardPage(Page):
             ic.place(x=10, y=14)
             self.app.icon_for(ic, slug, (38, 38))
             label(c, name, 12, "bold", anchor="w").place(x=56, y=8)
-            label(c, desc.split(".")[0][:22], 10, color=MUTED, anchor="w").place(x=56, y=28)
+            label(c, SHORT_DESC.get(name, desc.split(".")[0][:22]), 10, color=MUTED, anchor="w").place(x=56, y=28)
             st = label(c, "", 10, "bold", anchor="w")
             st.place(x=56, y=46)
             for w in (c, ic, st):
@@ -456,9 +814,9 @@ class DashboardPage(Page):
 
     # -- behaviour --
     def on_show(self):
-        names = [i.name for i in self.app.mgr.items]
-        self.inst_menu.configure(values=names)
-        self.inst_var.set(self.app.inst.name)
+        self.inst_labels = {f"{i.name} ({i.mc})": i.name for i in self.app.mgr.items}
+        self.inst_menu.configure(values=list(self.inst_labels))
+        self.inst_var.set(f"{self.app.inst.name} ({self.app.inst.mc})")
         self.refresh_chips()
         self.refresh_addons()
         if not self.packs_loaded:
@@ -469,18 +827,26 @@ class DashboardPage(Page):
     def refresh_instances(self):
         self.on_show()
 
-    def select_instance(self, name):
-        self.app.cfg.set("selected_instance", name)
+    def select_instance(self, shown):
+        self.app.cfg.set("selected_instance", self.inst_labels.get(shown, shown))
         self.refresh_chips()
         self.app.refresh_addon_views()
         self.app.warm_instance()
 
     def refresh_chips(self):
         inst = self.app.inst
-        self.chip_mc.configure(text=f"  ⛏  Minecraft {inst.mc} • {inst.loader.title()}  ")
-        self.chip_perf.configure(text=f"  🚀  Performance: {self.app.cfg.get('perf_mode').split()[0]}  ")
-        last = time.strftime("%b %d, %H:%M", time.localtime(inst.last_played)) if inst.last_played else "Never"
-        self.chip_last.configure(text=f"  🕒  Last Played: {last}  ")
+        self.chips["mc"][0].configure(text=f"Minecraft {inst.mc}")
+        self.chips["mc"][1].configure(text="")
+        self.chips["perf"][0].configure(text="Performance:")
+        self.chips["perf"][1].configure(text=self.app.cfg.get("perf_mode").split()[0])
+        if not inst.last_played:
+            last = "Never"
+        elif time.strftime("%Y%m%d", time.localtime(inst.last_played)) == time.strftime("%Y%m%d"):
+            last = "Today"
+        else:
+            last = time.strftime("%b %d", time.localtime(inst.last_played))
+        self.chips["last"][0].configure(text="Last Played:")
+        self.chips["last"][1].configure(text=last, text_color="#F472B6")
 
     def refresh_addons(self):
         inst = self.app.inst
@@ -493,19 +859,28 @@ class DashboardPage(Page):
 
     def load_packs(self):
         try:
-            packs, _ = self.app.mr.search(sort="downloads", limit=6)
+            packs, _ = self.app.mr.search(sort="downloads", limit=12)
         except Exception as e:
             self.app.ui(self.set_status, f"Modrinth offline: {e}", AMBER)
             self.packs_loaded = False
             return
         self.app.ui(self.render_packs, packs)
 
-    def render_packs(self, packs):
+    def render_packs(self, packs=None):
+        if packs is not None:
+            self.all_packs, self.pack_offset = packs, 0
+        else:                                           # arrow button: show the next six modpacks
+            self.pack_offset = 0 if self.pack_offset + 6 >= len(self.all_packs) else self.pack_offset + 6
         for w in self.pack_row.winfo_children():
             w.destroy()
-        for i, p in enumerate(packs):
+        shown = self.all_packs[self.pack_offset:self.pack_offset + 6]
+        for i, p in enumerate(shown):
             self.pack_row.grid_columnconfigure(i, weight=1, uniform="p")
             make_pack_card(self.pack_row, self.app, p, full=False).grid(row=0, column=i, sticky="nsew", padx=4)
+        if len(self.all_packs) > 6:
+            self.pack_row.grid_columnconfigure(6, weight=0)
+            ctk.CTkButton(self.pack_row, text="›", width=26, height=26, corner_radius=13, fg_color=CARD2,
+                          hover_color=BORDER, font=F(16, "bold"), command=self.render_packs).grid(row=0, column=6, padx=(4, 0))
 
     def tick(self):
         if self._job:
@@ -579,6 +954,9 @@ class ModpacksPage(Page):
         label(bar, "Sort by:", 12, color=MUTED).pack(side="left", padx=(0, 8))
         self.sort_var = ctk.StringVar(value=self.sort)
         menu(bar, list(self.SORTS), self.sort_var, self.on_sort, 170).pack(side="left")
+        self.filter_var = ctk.StringVar(value="All Versions")
+        menu(bar, ["All Versions"] + MC_VERSIONS, self.filter_var, lambda v: self.on_filter("version", v), 170).pack(side="right")
+        label(bar, "Filter:", 12, color=MUTED).pack(side="right", padx=(0, 8))
         self.grid_host = ctk.CTkFrame(main, fg_color="transparent")
         self.grid_host.grid(row=3, column=0, sticky="nsew")
         for c in range(4):
@@ -588,21 +966,30 @@ class ModpacksPage(Page):
         self.footer = card(main, corner_radius=10)
         self.footer.grid(row=5, column=0, sticky="ew")
         self.foot_labels = []
-        for i, title in enumerate(("Total Modpacks", "Installed", "Total Downloads", "Storage Used", "Auto Update")):
+        for i, (title, icon) in enumerate((("Total Modpacks", "puzzle"), ("Installed", "cube"), ("Total Downloads", "download"),
+                                           ("Storage Used", "servers"), ("Auto Update", None))):
             self.footer.grid_columnconfigure(i, weight=1, uniform="f")
             box = ctk.CTkFrame(self.footer, fg_color="transparent")
-            box.grid(row=0, column=i, pady=8)
-            label(box, title, 11, color=MUTED).pack()
-            v = label(box, "-", 14, "bold")
-            v.pack()
+            box.grid(row=0, column=i, pady=10)
+            if icon:
+                label(box, "", image=icon_img(icon, 26, MUTED)).pack(side="left", padx=(0, 10))
+            else:
+                label(box, "●", 14, color=GREEN).pack(side="left", padx=(0, 10))
+            col = ctk.CTkFrame(box, fg_color="transparent")
+            col.pack(side="left")
+            label(col, title, 11, color=MUTED, anchor="w").pack(anchor="w")
+            v = label(col, "-", 14, "bold", anchor="w")
+            v.pack(anchor="w")
             self.foot_labels.append(v)
         self.build_side()
 
     def build_side(self):
         side = ctk.CTkFrame(self, fg_color="transparent", width=290)
         side.grid(row=0, column=1, sticky="ns")
-        self.search = ctk.CTkEntry(side, placeholder_text="Search modpacks...", height=38, width=290)
+        self.search = ctk.CTkEntry(side, placeholder_text="Search modpacks...", height=40, width=290, fg_color=CARD,
+                                   border_color=BORDER)
         self.search.pack()
+        label(self.search, "", image=icon_img("search", 18, MUTED), fg_color="transparent").place(relx=1, x=-10, rely=.5, anchor="e")
         self.search.bind("<Return>", lambda e: self.do_search())
         f = card(side, width=290)
         f.pack(fill="x", pady=10)
@@ -620,7 +1007,11 @@ class ModpacksPage(Page):
             var = ctk.StringVar(value=values[0])
             menu(f, values, var, lambda v, k=key: self.on_filter(k, v), 262).pack(padx=14, pady=(2, 4))
             self.vars[key] = var
-        ctk.CTkFrame(f, height=8, fg_color="transparent").pack()
+        self.inc_installed, self.inc_outdated = ctk.BooleanVar(value=False), ctk.BooleanVar(value=False)
+        for text, var in (("Include Installed", self.inc_installed), ("Include Outdated", self.inc_outdated)):
+            ctk.CTkCheckBox(f, text=text, variable=var, font=F(12), checkbox_width=18, checkbox_height=18,
+                            fg_color=BLUE, border_color=BORDER, command=self.reload).pack(anchor="w", padx=14, pady=(8, 2))
+        ctk.CTkFrame(f, height=10, fg_color="transparent").pack()
         feat = card(side, width=290)
         feat.pack(fill="x")
         label(feat, "FEATURED MODPACK", 12, "bold").pack(anchor="w", padx=14, pady=(12, 6))
@@ -665,6 +1056,8 @@ class ModpacksPage(Page):
             self.source = value
         elif key == "version":
             self.version = value
+            self.vars["version"].set(value)
+            self.filter_var.set(value)
         elif key == "loader":
             self.loader = value
         else:
@@ -676,6 +1069,7 @@ class ModpacksPage(Page):
         for key, var in self.vars.items():
             var.set({"source": "Modrinth", "version": "All Versions", "loader": "All Loaders",
                      "cat": "All Categories"}[key])
+        self.filter_var.set("All Versions")
         self.source, self.version, self.loader, self.cat, self.q, self.page = "Modrinth", "All Versions", "All Loaders", None, "", 0
         self.search.delete(0, "end")
         self.reload()
@@ -722,6 +1116,10 @@ class ModpacksPage(Page):
             return
         for w in self.grid_host.winfo_children():
             w.destroy()
+        installed = {i.name.lower() for i in self.app.mgr.items}
+        packs = [p for p in packs
+                 if (self.inc_installed.get() or p["title"].lower() not in installed)
+                 and (self.inc_outdated.get() or (B.mc_parts(p["mc"]) or (9,))[:2] >= (1, 20))]   # outdated = older than 1.20
         if not packs:
             label(self.grid_host, "No modpacks found.", 14, color=MUTED).grid(row=0, column=0, columnspan=4, pady=60)
         for i, p in enumerate(packs):
@@ -830,16 +1228,20 @@ class AddonsPage(Page):
             setattr(self, "tile_total" if i == 0 else "tile_inst", v)
         self.uptodate = card(side, width=300)
         self.uptodate.pack(fill="x", pady=8)
-        self.up_title = label(self.uptodate, "", 13, "bold", GREEN)
-        self.up_title.pack(anchor="w", padx=14, pady=(12, 0))
-        self.up_sub = label(self.uptodate, "", 11, color=MUTED)
-        self.up_sub.pack(anchor="w", padx=14, pady=(0, 12))
+        label(self.uptodate, "", image=shield_img(54)).pack(side="right", padx=16, pady=10)
+        txt = ctk.CTkFrame(self.uptodate, fg_color="transparent")
+        txt.pack(side="left", fill="x", expand=True)
+        self.up_title = label(txt, "", 13, "bold", GREEN)
+        self.up_title.pack(anchor="w", padx=14, pady=(14, 0))
+        self.up_sub = label(txt, "", 11, color=MUTED)
+        self.up_sub.pack(anchor="w", padx=14, pady=(0, 14))
         cats = card(side, width=300)
         cats.pack(fill="x")
         row = ctk.CTkFrame(cats, fg_color="transparent")
         row.pack(fill="x", padx=12, pady=10)
         self.search = ctk.CTkEntry(row, placeholder_text="Search addons... (Enter = search online)", height=34)
         self.search.pack(fill="x")
+        label(self.search, "", image=icon_img("search", 18, MUTED), fg_color="transparent").place(relx=1, x=-10, rely=.5, anchor="e")
         self.search.bind("<KeyRelease>", self.on_query)
         self.search.bind("<Return>", lambda e: self.search_online())
         top = ctk.CTkFrame(cats, fg_color="transparent")
@@ -862,22 +1264,26 @@ class AddonsPage(Page):
         self.info_name.pack(anchor="w")
         self.info_cat = label(t, "", 11, color=MUTED, anchor="w")
         self.info_cat.pack(anchor="w")
-        self.info_desc = label(info, "", 11, color=MUTED, anchor="w", justify="left", wraplength=265)
-        self.info_desc.pack(anchor="w", padx=14, pady=6)
+        self.info_desc = label(top, "", 11, color=MUTED, anchor="w", justify="left", wraplength=120)
+        self.info_desc.pack(side="left", padx=(6, 0))
         self.info_rows = {}
-        for key in ("Status", "Version", "Minecraft", "Author"):
-            r = ctk.CTkFrame(info, fg_color="transparent")
-            r.pack(fill="x", padx=14, pady=1)
-            label(r, key, 11, color=MUTED).pack(side="left")
-            v = label(r, "-", 11)
-            v.pack(side="left", padx=24)
+        rows = ctk.CTkFrame(info, fg_color="transparent")
+        rows.pack(fill="x", padx=14, pady=(10, 0))
+        rows.grid_columnconfigure(1, weight=1)
+        for n, key in enumerate(("Status", "Version", "Minecraft", "Author")):
+            label(rows, key, 11, color=MUTED, anchor="w").grid(row=n, column=0, sticky="w", pady=2)
+            v = label(rows, "-", 11, anchor="w")
+            v.grid(row=n, column=1, sticky="w", padx=(36, 0), pady=2)
             self.info_rows[key] = v
         ctk.CTkFrame(info, height=10, fg_color="transparent").pack()
         agent = card(side, width=300, fg_color="#0A1A3A")
         agent.pack(fill="x")
-        label(agent, "🤖", 30).pack(side="left", padx=12, pady=10)
-        label(agent, "Powered by Supersonic Agent (AI)\nWe automatically select and update the best addons for your system.",
-              11, color=CYAN, justify="left", wraplength=210, anchor="w").pack(side="left", pady=10)
+        label(agent, "", image=robot_img(64)).pack(side="left", padx=12, pady=10)
+        txt = ctk.CTkFrame(agent, fg_color="transparent")
+        txt.pack(side="left", pady=10)
+        label(txt, "Powered by Supersonic Agent (AI)", 12, "bold", CYAN, anchor="w").pack(anchor="w")
+        label(txt, "We automatically select and update the best addons for your system.", 11, color="#9DB4E0",
+              justify="left", wraplength=190, anchor="w").pack(anchor="w")
 
     def on_show(self):
         self.refresh_addons()
@@ -962,7 +1368,7 @@ class AddonsPage(Page):
         self.tile_total.configure(text=str(len(ADDONS)))
         self.tile_inst.configure(text=f"{done} / {len(ADDONS)}")
         if done == len(ADDONS):
-            self.up_title.configure(text="All addons are installed!", text_color=GREEN)
+            self.up_title.configure(text="All addons are up to date!", text_color=GREEN)
             self.up_sub.configure(text="Your client is fully optimized.")
         else:
             self.up_title.configure(text=f"{len(ADDONS) - done} addons not installed", text_color=AMBER)
@@ -971,11 +1377,18 @@ class AddonsPage(Page):
             w.destroy()
         for name in ["All Categories"] + ADDON_TABS[1:]:
             n = len(ADDONS) if name == "All Categories" else sum(a[2] == name for a in ADDONS)
+            if n == 0:
+                continue
             on = (name == "All Categories" and self.tab == "All Addons") or name == self.tab
-            ctk.CTkButton(self.cat_box, text=f"{name}{' ' * 4}{n}", anchor="w", height=28, font=F(12),
-                          fg_color="#10234A" if on else "transparent", hover_color=CARD2,
-                          text_color=TXT if on else MUTED,
-                          command=lambda t=name: self.on_tab("All Addons" if t == "All Categories" else t)).pack(fill="x")
+            row = ctk.CTkFrame(self.cat_box, fg_color="#10234A" if on else "transparent", corner_radius=6)
+            row.pack(fill="x", pady=1)
+            go = (lambda e=None, t=name: self.on_tab("All Addons" if t == "All Categories" else t))
+            left = label(row, f"  {name}", 12, color=TXT if on else MUTED, anchor="w")
+            left.pack(side="left", pady=4)
+            right = label(row, f"{n}  ", 12, color=TXT if on else MUTED, anchor="e")
+            right.pack(side="right", pady=4)
+            for w in (row, left, right):
+                w.bind("<Button-1>", go)
         self.render()
         self.update_perf()
 
@@ -987,8 +1400,12 @@ class AddonsPage(Page):
             self.host.grid_columnconfigure(c, weight=1 if c < cols else 0, uniform="a" if c < cols else "")
         if self.remote is not None:
             return self.render_remote(cols)
-        for i, a in enumerate(self.visible()):
+        shown = self.visible()
+        for i, a in enumerate(shown):
             self.make_card(a).grid(row=i // cols, column=i % cols, sticky="ew", padx=4, pady=4)
+        if not shown:
+            label(self.host, "Nothing in this category yet.\nType a name in the search box and press Enter to search "
+                  "Modrinth + CurseForge.", 12, color=MUTED, justify="center").grid(row=0, column=0, columnspan=4, pady=40)
 
     def make_card(self, a):
         name, slug, cat, desc = a
@@ -1045,7 +1462,9 @@ class AddonsPage(Page):
             w.destroy()
         perf = [a[0] for a in ADDONS if a[2] == "Performance"]
         frac = sum(self.app.inst.has_addon(n) for n in perf) / len(perf)
-        label(self.perf, "Performance Summary (estimated from installed addons)", 13, "bold").pack(anchor="w", padx=14, pady=(8, 2))
+        label(self.perf, "Performance Summary", 14, "bold").pack(anchor="w", padx=14, pady=(8, 0))
+        label(self.perf, "These addons work together to deliver the best performance and stability. "
+              "(Estimated from installed addons)", 11, color=MUTED).pack(anchor="w", padx=14, pady=(0, 4))
         row = ctk.CTkFrame(self.perf, fg_color="transparent")
         row.pack(fill="x", padx=10, pady=(0, 10))
         for i, (title, val, color, rising) in enumerate((
@@ -1252,8 +1671,18 @@ class ListPage(Page):
 # Settings
 # ----------------------------------------------------------------------------
 class SettingsPage(Page):
+    TAB_CARDS = {
+        "General": None,                                   # everything (the six mockup cards first)
+        "Performance": ["PERFORMANCE SETTINGS", "TRANSLATION"],
+        "Minecraft": ["MINECRAFT SETTINGS"],
+        "Launcher": ["LAUNCHER SETTINGS"],
+        "Updates": ["LAUNCHER SETTINGS", "SUPERSONIC MODS"],
+        "Privacy": ["LAUNCHER SETTINGS"],
+        "Advanced": ["DOWNLOAD SETTINGS", "CLOUD & SYNC", "TRANSLATION", "SUPERSONIC MODS"]}
+
     def __init__(self, parent, app):
         super().__init__(parent, app)
+        self.tab = "General"
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
         self.build()
@@ -1274,8 +1703,9 @@ class SettingsPage(Page):
         titles.winfo_children()[0].configure(font=F(30, "bold", True))
         label(titles, "Customize your experience.", 13, color=MUTED).pack(anchor="w")
         button(head, "⟲  Reset to Default", self.reset, primary=False, width=170, height=38).pack(side="right")
-        TabBar(main, ["General", "Performance", "Minecraft", "Launcher", "Updates", "Privacy", "Advanced"],
-               lambda t: None).grid(row=1, column=0, sticky="w", pady=(8, 6))
+        tabs = TabBar(main, list(self.TAB_CARDS), self.on_tab)
+        tabs.grid(row=1, column=0, sticky="w", pady=(8, 6))
+        tabs.select(self.tab, fire=False)
         scroll = ctk.CTkScrollableFrame(main, fg_color="transparent")
         scroll.grid(row=2, column=0, sticky="nsew")
         for c in range(3):
@@ -1298,12 +1728,12 @@ class SettingsPage(Page):
                 ("Optimize Launcher", "Apply advanced optimizations.", "switch", "optimize_launcher", None, {})]),
             ("MINECRAFT SETTINGS", [
                 ("Default Java Version", "Select default Java runtime.", "menu", "java_version",
-                 ["Auto", "Java 8", "Java 17", "Java 21"], {}),
+                 ["Auto (Recommended)", "Java 8", "Java 17", "Java 21"], {}),
                 ("Minecraft Folder", "Change the .minecraft directory.", "button", "Open Folder",
                  lambda: B.open_path(B.MC_ROOT), {}),
                 ("Automatically Install Java", "Install recommended Java if missing.", "switch", "auto_java", None, {}),
                 ("Use Native Libraries", "Use native libraries for better performance.", "switch", "native_libs", None, {}),
-                ("Keep Launcher Open", "Keep launcher open while Minecraft is running.", "switch", "keep_launcher_open", None, {})]),
+                ("Launcher Visibility", "Keep launcher open while Minecraft is running.", "switch", "keep_launcher_open", None, {})]),
             ("LAUNCHER SETTINGS", [
                 ("Check for Updates", "Automatically check for launcher updates.", "switch", "check_updates", None, {}),
                 ("Download Updates", "Download updates in background.", "switch", "download_updates", None, {}),
@@ -1314,14 +1744,14 @@ class SettingsPage(Page):
                 ("Download Speed Limit", "Limit download speed.", "menu", "download_limit", ["Unlimited", "10 MB/s", "5 MB/s"], {}),
                 ("Max Connections", "Set maximum parallel downloads.", "menu", "max_connections",
                  ["4", "8", "16", "32"], dict(show=str, conv=int)),
-                ("Metadata Sources", "CurseForge API key.", "button", "Configure", self.cf_key, {}),
+                ("Metadata Sources", "Select mod download sources.", "button", "Configure", self.cf_key, {}),
                 ("Verify Downloads", "Verify files after download.", "switch", "verify_downloads", None, {}),
                 ("Delete Temp Files", "Automatically delete temporary files.", "menu", "delete_temp", ["Always", "Never"], {})]),
-            ("BACKUP & SYNC", [
+            ("CLOUD & SYNC", [
                 ("Enable Cloud Sync", "Sync instances and settings.", "switch", "cloud_sync", None, {}),
                 ("Sync Across Devices", "Keep data synced across devices.", "switch", "sync_devices", None, {}),
-                ("Backup Instances", "Backup the selected instance.", "button", "Manage", self.backup, {}),
-                ("Restore from Backup", "Restore an instance from a backup zip.", "button", "Restore", self.restore, {})]),
+                ("Backup Instances", "Backup instances to cloud.", "button", "Manage", self.backup, {}),
+                ("Restore from Backup", "Restore instances from cloud backup.", "button", "Restore", self.restore, {})]),
             ("TRANSLATION", [
                 ("OpenGL → D3D12", "Windows only. Auto picks D3D12 when your PC supports it.", "menu",
                  "translation_mode", list(B.TRANSLATION_MODES), dict(after=self.translation_changed)),
@@ -1339,12 +1769,24 @@ class SettingsPage(Page):
                 ("Mods Repository", "Open the GitHub repository with the mods.", "button", "Open",
                  lambda: webbrowser.open(f"https://github.com/{self.app.custom_mods.repo}"), {})]),
         ]
+        wanted = self.TAB_CARDS[self.tab]
+        if wanted:
+            sections = [sec for sec in sections if sec[0] in wanted]
         for i, (title, rows) in enumerate(sections):
             c = card(scroll)
             c.grid(row=i // 3, column=i % 3, sticky="nsew", padx=5, pady=5)
             label(c, title, 12, "bold").pack(anchor="w", padx=16, pady=(14, 4))
             for r in rows:
                 self.row(c, *r)
+            if title == "CLOUD & SYNC":
+                used = B.dir_size(B.BACKUP_DIR) / 1e9 if B.BACKUP_DIR.exists() else 0
+                line = ctk.CTkFrame(c, fg_color="transparent")
+                line.pack(fill="x", padx=16, pady=(8, 2))
+                label(line, "Backup Storage Used", 11, color=TXT).pack(side="left")
+                label(line, f"{used:.1f} GB / 10 GB", 11, color=MUTED).pack(side="right")
+                bar = ctk.CTkProgressBar(c, height=6, progress_color=BLUE, fg_color=BORDER)
+                bar.set(min(used / 10, 1))
+                bar.pack(fill="x", padx=16, pady=(0, 14))
             if title == "TRANSLATION":
                 self.tr_status = label(c, self.translation_text(), 10, color=MUTED, anchor="w", justify="left",
                                        wraplength=290)
@@ -1379,6 +1821,10 @@ class SettingsPage(Page):
                           command=lambda: cfg.set(key, var.get())).pack(side="right")
         else:
             button(r, key, values, primary=False, width=90, height=28, font=F(12)).pack(side="right")
+
+    def on_tab(self, tab):
+        self.tab = tab
+        self.build()
 
     # -- translation / mods helpers --
     def translation_text(self):
@@ -1419,31 +1865,48 @@ class SettingsPage(Page):
         sysbox.pack(fill="x")
         label(sysbox, "SYSTEM OVERVIEW", 12, "bold").pack(anchor="w", padx=14, pady=(12, 6))
         self.sys_labels = {}
-        for key, icon in (("OS", "🪟"), ("CPU", "🧠"), ("RAM", "🧮"), ("GPU", "🎮"), ("Storage", "💾")):
+        for key, icon in (("OS", "os"), ("CPU", "cpu"), ("RAM", "ram"), ("GPU", "gpu"), ("Storage", "disk")):
             r = ctk.CTkFrame(sysbox, fg_color="transparent")
-            r.pack(fill="x", padx=14, pady=3)
-            label(r, f"{icon}  {key}", 12).pack(side="left")
+            r.pack(fill="x", padx=14, pady=5)
+            label(r, "", image=icon_img(icon, 22, "#3B82F6")).pack(side="left", padx=(0, 12))
+            label(r, key, 12).pack(side="left")
             v = label(r, "...", 11, color=MUTED, wraplength=150, anchor="e", justify="right")
             v.pack(side="right")
             self.sys_labels[key] = v
-        button(sysbox, "〰  Run Diagnostics", self.app.run_diagnostics, primary=False).pack(fill="x", padx=14, pady=12)
+        button(sysbox, "〰  Run Diagnostics", self.app.run_diagnostics, primary=False, height=40,
+               text_color=CYAN).pack(fill="x", padx=14, pady=12)
         quick = card(side, width=300)
         quick.pack(fill="x", pady=8)
         label(quick, "AGENT (AI) QUICK ACTIONS", 12, "bold").pack(anchor="w", padx=14, pady=(12, 6))
-        for title, sub, act in (("Auto Fix Errors", "Detect and fix issues.", "scan"),
-                                ("Optimize Performance", "Improve FPS & stability.", "essentials"),
-                                ("Clean Junk Files", "Free up storage space.", "clean"),
-                                ("Reset Configurations", "Reset settings to optimal.", "reset")):
-            b = ctk.CTkButton(quick, text=f"{title}\n{sub}", anchor="w", height=46, fg_color=CARD2, hover_color=BORDER,
-                              font=F(12), command=lambda a=act: self.quick(a))
-            b.pack(fill="x", padx=12, pady=3)
-        button(quick, "🤖  Open Agent (AI)", lambda: self.app.show("Agent (AI)"), primary=False, height=40).pack(
-            fill="x", padx=12, pady=10)
+        for title, sub, act, icon, fg, bg in (
+                ("Auto Fix Errors", "Detect and fix issues.", "scan", "gear", "#60A5FA", "#12264D"),
+                ("Optimize Performance", "Improve FPS & stability.", "essentials", "bolt", "#4ADE80", "#0F2E1E"),
+                ("Clean Junk Files", "Free up storage space.", "clean", "trash", "#FBBF24", "#33260C"),
+                ("Reset Configurations", "Reset settings to optimal.", "reset", "refresh", "#F472B6", "#33142B")):
+            row = ctk.CTkFrame(quick, fg_color=CARD2, corner_radius=10, height=54)
+            row.pack(fill="x", padx=12, pady=3)
+            row.pack_propagate(False)
+            ic = label(row, "", image=badge_icon(icon, fg, bg, 36))
+            ic.pack(side="left", padx=(8, 10))
+            col = ctk.CTkFrame(row, fg_color="transparent")
+            col.pack(side="left")
+            t1 = label(col, title, 12, "bold", anchor="w")
+            t1.pack(anchor="w")
+            t2 = label(col, sub, 10, color=MUTED, anchor="w")
+            t2.pack(anchor="w")
+            chev = label(row, "", image=icon_img("chevron", 14, MUTED))
+            chev.pack(side="right", padx=12)
+            for w in (row, ic, col, t1, t2, chev):
+                w.bind("<Button-1>", lambda e, a=act: self.quick(a))
+        ctk.CTkButton(quick, text="  Open Agent (AI)", image=robot_img(26), compound="left", height=44,
+                      fg_color="#0E1F45", hover_color="#12295A", border_width=1, border_color=BLUE, text_color=CYAN,
+                      font=F(14, "bold"), command=lambda: self.app.show("Agent (AI)")).pack(fill="x", padx=12, pady=10)
         about = card(side, width=300)
         about.pack(fill="x")
         label(about, "ABOUT", 12, "bold").pack(anchor="w", padx=14, pady=(12, 4))
-        label(about, "Supersonic Client v2.6.0", 13, "bold").pack(anchor="w", padx=14)
-        label(about, "The next generation Minecraft launcher.", 11, color=MUTED).pack(anchor="w", padx=14, pady=(0, 14))
+        label(about, f"Supersonic Client v{VERSION}", 13, "bold").pack(anchor="w", padx=14)
+        label(about, "The next generation Minecraft launcher.", 11, color=MUTED).pack(anchor="w", padx=14, pady=(0, 70))
+        label(about, "", image=ctk.CTkImage(make_logo(256), size=(120, 120))).place(relx=1, x=-14, rely=1, y=-6, anchor="se")
 
     def on_show(self):
         if self.sys_labels["OS"].cget("text") == "...":
@@ -1506,8 +1969,8 @@ class AgentPage(Page):
 # ----------------------------------------------------------------------------
 # Application shell
 # ----------------------------------------------------------------------------
-NAV = [("Dashboard", "🏠"), ("Modpacks", "📦"), ("Addons", "🧩"), ("Instances", "🧊"), ("Servers", "🗄"),
-       ("Resource Packs", "🖼"), ("Worlds", "🌍"), ("Settings", "⚙"), ("Agent (AI)", "🤖")]
+NAV = [("Dashboard", "home"), ("Modpacks", "cube"), ("Addons", "puzzle"), ("Instances", "cube"), ("Servers", "servers"),
+       ("Resource Packs", "image"), ("Worlds", "worlds"), ("Settings", "gear"), ("Agent (AI)", "robot")]
 BADGES = {"Addons": ("NEW", PURPLE), "Agent (AI)": ("AI", GREEN)}
 
 
@@ -1527,7 +1990,8 @@ class App(ctk.CTk):
         self.logs, self.panels, self.icon_urls, self.icon_waiters = [], [], {}, []
         self.running = self.busy_addons = self.busy_pack = False
         self._toast_id = None
-        self.title("Supersonic Client v2.6.0")
+        self.title("Supersonic Client")
+        set_window_icon(self)
         self.geometry("1440x900")
         self.minsize(1240, 780)
         self.configure(fg_color=BG)
@@ -1563,16 +2027,23 @@ class App(ctk.CTk):
 
     # -- shell --
     def build_header(self):
-        bar = ctk.CTkFrame(self, fg_color=PANEL, corner_radius=0, height=64)
+        bar = ctk.CTkFrame(self, fg_color=PANEL, corner_radius=0, height=70)
         bar.grid(row=0, column=0, columnspan=2, sticky="ew")
         bar.pack_propagate(False)
-        logo = ctk.CTkImage(make_logo(128), size=(44, 44))
-        label(bar, "", image=logo).pack(side="left", padx=(18, 10))
-        label(bar, "SUPERSONIC", 20, "bold").pack(side="left")
-        bar.winfo_children()[-1].configure(font=F(20, "bold", True))
-        label(bar, "  v2.5.0", 12, color=MUTED).pack(side="left", pady=(6, 0))
-        tag = "   ".join(" ".join(w) for w in "THE NEXT GENERATION MINECRAFT LAUNCHER".split())
-        label(bar, tag, 12, "bold", CYAN).place(relx=.5, rely=.5, anchor="center")
+        label(bar, "", image=ctk.CTkImage(make_logo(256), size=(62, 62))).pack(side="left", padx=(16, 12))
+        brand = ctk.CTkFrame(bar, fg_color="transparent")
+        brand.pack(side="left")
+        top = ctk.CTkFrame(brand, fg_color="transparent")
+        top.pack(anchor="w")
+        name = label(top, "SUPERSONIC", 22, "bold")
+        name.configure(font=F(22, "bold", True))
+        name.pack(side="left")
+        label(top, f"  v{VERSION}", 12, color=MUTED).pack(side="left", pady=(6, 0))
+        label(brand, "C  L  I  E  N  T", 9, color=MUTED, anchor="w").pack(anchor="w")
+        banner = label(bar, "", image=banner_img(640, 46))
+        banner.place(relx=.5, rely=.5, anchor="center")
+        tag = "THE  NEXT  GENERATION  MINECRAFT  LAUNCHER"
+        label(bar, " ".join(tag), 11, "bold", CYAN, fg_color="#08162F").place(relx=.5, rely=.46, anchor="center")
 
     def build_sidebar(self):
         side = ctk.CTkFrame(self, fg_color=PANEL, corner_radius=0, width=240)
@@ -1582,9 +2053,9 @@ class App(ctk.CTk):
         for name, icon in NAV:
             row = ctk.CTkFrame(side, fg_color="transparent")
             row.pack(fill="x", padx=12, pady=2)
-            btn = ctk.CTkButton(row, text=f"  {icon}   {name}", anchor="w", height=42, corner_radius=10,
-                                fg_color="transparent", hover_color=CARD2, text_color=MUTED, border_color=BLUE,
-                                font=F(14), command=lambda n=name: self.show(n))
+            btn = ctk.CTkButton(row, text=f"  {name}", image=icon_img(icon, 22, MUTED), compound="left", anchor="w",
+                                height=44, corner_radius=10, fg_color="transparent", hover_color=CARD2,
+                                text_color=MUTED, border_color=BLUE, font=F(14), command=lambda n=name: self.show(n))
             btn.pack(fill="x")
             self.nav[name] = btn
             if name in BADGES:
@@ -1601,15 +2072,20 @@ class App(ctk.CTk):
         t.pack(side="left")
         self.acc_name = label(t, "", 13, "bold", anchor="w")
         self.acc_name.pack(anchor="w")
-        label(t, "👑 Premium", 11, "bold", AMBER, anchor="w").pack(anchor="w")
+        label(t, "♛ Premium", 11, "bold", AMBER, anchor="w").pack(anchor="w")
         for w in (acc, self.avatar, t, self.acc_name):
             w.bind("<Button-1>", lambda e: self.edit_username())
         self.update_account()
-        links = ctk.CTkFrame(bottom, fg_color="transparent")
-        links.pack(pady=(10, 0))
-        for text, key in (("🌐 Website", "website_url"), ("💬 Discord", "discord_url"), ("🐙 GitHub", "github_url")):
-            ctk.CTkButton(links, text=text, width=60, height=24, fg_color="transparent", hover=False, text_color=MUTED,
-                          font=F(11), command=lambda k=key: webbrowser.open(self.cfg.get(k))).pack(side="left")
+        foot = ctk.CTkFrame(bottom, fg_color="transparent")
+        foot.pack(fill="x", pady=(14, 0))
+        label(foot, "SUPERSONIC CLIENT", 11, color=MUTED, anchor="w").pack(anchor="w", padx=4)
+        label(foot, "© 2026 Supersonic Client", 10, color="#5D6B85", anchor="w").pack(anchor="w", padx=4)
+        label(foot, "All rights reserved.", 10, color="#5D6B85", anchor="w").pack(anchor="w", padx=4, pady=(0, 6))
+        for text, key, icon, color in (("Website", "website_url", "globe", MUTED), ("Discord", "discord_url", "discord", "#5B7CFA"),
+                                       ("GitHub", "github_url", "github", MUTED)):
+            ctk.CTkButton(foot, text=f"  {text}", image=icon_img(icon, 18, color), compound="left", anchor="w", width=120,
+                          height=26, fg_color="transparent", hover=False, text_color=color if icon == "discord" else MUTED,
+                          font=F(12), command=lambda k=key: webbrowser.open(self.cfg.get(k))).pack(anchor="w")
 
     def update_account(self):
         name = self.cfg.get("username")
@@ -1624,10 +2100,11 @@ class App(ctk.CTk):
         FormDialog(self, "Account", [("name", "Minecraft username (offline mode)", "entry", self.cfg.get("username"))], save)
 
     def show(self, name):
+        icons = dict(NAV)
         for key, btn in self.nav.items():
             on = key == name
             btn.configure(fg_color="#0F2349" if on else "transparent", text_color=TXT if on else MUTED,
-                          border_width=1 if on else 0)
+                          border_width=1 if on else 0, image=icon_img(icons[key], 22, CYAN if on else MUTED))
         for page in self.pages.values():
             page.grid_forget()
         page = self.pages[name]
