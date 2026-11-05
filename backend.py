@@ -52,7 +52,7 @@ DEFAULTS = {
     "username": "Raffiee_playssMC", "ram_mb": 8192, "perf_mode": "Ultra (Recommended)",
     "language": "English", "theme": "Dark (Default)", "start_with_windows": False,
     "minimize_to_tray": True, "confirm_exit": True, "preload_assets": True, "smart_memory": True,
-    "optimize_launcher": True, "java_version": "Auto", "auto_java": True, "native_libs": True,
+    "optimize_launcher": True, "java_version": "Auto (Recommended)", "auto_java": True, "native_libs": True,
     "keep_launcher_open": True, "check_updates": True, "download_updates": True,
     "beta_updates": False, "analytics": False, "crash_reports": True, "download_limit": "Unlimited",
     "max_connections": 16, "verify_downloads": True, "delete_temp": "Always", "cloud_sync": True,
@@ -284,6 +284,8 @@ class Config:
                 self.data.update(json.loads(CONFIG_FILE.read_text("utf-8")))
             except Exception:
                 pass
+        if self.data.get("java_version") == "Auto":
+            self.data["java_version"] = "Auto (Recommended)"
         # older versions shipped a wrong GitHub account name in the default URL
         url = str(self.data.get("github_url", ""))
         if "github.com/greeko-afk/" in url:
