@@ -35,11 +35,11 @@ jobs:
 
       - name: Build Python EXE (One-Dir for Installer)
         run: |
-          pyinstaller --noconfirm --onedir --windowed --name "SupersonicClient" --add-data "engine/opengl32.dll;engine" main.py
+          pyinstaller --noconfirm --onedir --windowed --name "SupersonicClient" --icon "assets/icon.ico" --add-data "engine/opengl32.dll;engine" main.py
 
       - name: Build Python EXE (One-File for Standalone)
         run: |
-          pyinstaller --noconfirm --onefile --windowed --name "Supersonic-Client" --add-data "engine/opengl32.dll;engine" main.py
+          pyinstaller --noconfirm --onefile --windowed --name "Supersonic-Client" --icon "assets/icon.ico" --add-data "engine/opengl32.dll;engine" main.py
 
       - name: Compile Inno Setup Installer
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
